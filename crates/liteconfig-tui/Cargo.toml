@@ -1,0 +1,39 @@
+[package]
+name = "liteconfig-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "TUI for liteconfig."
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["tui", "ai", "claude", "codex"]
+categories = ["command-line-utilities"]
+
+[lib]
+name = "liteconfig_tui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "liteconfig"
+path = "src/main.rs"
+
+[dependencies]
+liteconfig-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+clap.workspace = true
+fuzzy-matcher.workspace = true
+arboard.workspace = true
+color-eyre.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+chrono.workspace = true
+uuid.workspace = true

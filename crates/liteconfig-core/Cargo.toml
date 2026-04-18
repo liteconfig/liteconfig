@@ -1,0 +1,30 @@
+[package]
+name = "liteconfig-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Core library for liteconfig."
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["ai", "claude", "codex", "config"]
+categories = ["config"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+dirs.workspace = true
+walkdir.workspace = true
+sha2.workspace = true
+rusqlite.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+git2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

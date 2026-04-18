@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/liteconfig-core",
+    "crates/liteconfig-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+authors = ["Piyush Mohite"]
+repository = "https://github.com/piyushm17/liteconfig"
+homepage = "https://github.com/piyushm17/liteconfig"
+description = "Fast TUI for syncing AI coding agent configs, skills, MCP, and rules."
+readme = "README.md"
+keywords = ["tui", "ai", "claude", "codex", "gemini"]
+categories = ["command-line-utilities", "config"]
+
+[workspace.dependencies]
+liteconfig-core = { path = "crates/liteconfig-core" }
+
+# Shared external deps (locked at workspace level)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+dirs = "5"
+walkdir = "2"
+sha2 = "0.10"
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+tempfile = "3"
+git2 = { version = "0.19", default-features = false, features = ["vendored-libgit2"] }
+
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+clap = { version = "4", features = ["derive"] }
+fuzzy-matcher = "0.3"
+arboard = "3"
+color-eyre = "0.6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+opt-level = 3

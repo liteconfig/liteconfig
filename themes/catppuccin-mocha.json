@@ -1,0 +1,19 @@
+{
+  "name": "Catppuccin Mocha",
+  "author": "Catppuccin",
+  "surface":      [30,  30,  46],
+  "surface_alt":  [49,  50,  68],
+  "primary":      [137, 180, 250],
+  "secondary":    [203, 166, 247],
+  "accent":       [250, 179, 135],
+  "muted":        [127, 132, 156],
+  "border":       [88,  91,  112],
+  "border_focus": [137, 180, 250],
+  "text":         [205, 214, 244],
+  "text_dim":     [166, 173, 200],
+  "success":      [166, 227, 161],
+  "warning":      [249, 226, 175],
+  "danger":       [243, 139, 168],
+  "selection_bg": [49,  50,  68],
+  "selection_fg": [205, 214, 244]
+}

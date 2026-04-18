@@ -1,0 +1,19 @@
+{
+  "name": "Nord",
+  "author": "Arctic Ice Studio",
+  "surface":      [46,  52,  64],
+  "surface_alt":  [59,  66,  82],
+  "primary":      [136, 192, 208],
+  "secondary":    [180, 142, 173],
+  "accent":       [235, 203, 139],
+  "muted":        [76,  86,  106],
+  "border":       [67,  76,  94],
+  "border_focus": [136, 192, 208],
+  "text":         [216, 222, 233],
+  "text_dim":     [160, 168, 182],
+  "success":      [163, 190, 140],
+  "warning":      [235, 203, 139],
+  "danger":       [191, 97,  106],
+  "selection_bg": [59,  66,  82],
+  "selection_fg": [216, 222, 233]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "Catppuccin Macchiato",
+  "author": "Catppuccin",
+  "surface":      [36,  39,  58],
+  "surface_alt":  [54,  58,  79],
+  "primary":      [138, 173, 244],
+  "secondary":    [198, 160, 246],
+  "accent":       [245, 169, 127],
+  "muted":        [128, 135, 162],
+  "border":       [91,  96,  120],
+  "border_focus": [138, 173, 244],
+  "text":         [202, 211, 245],
+  "text_dim":     [165, 173, 203],
+  "success":      [166, 218, 149],
+  "warning":      [238, 212, 159],
+  "danger":       [237, 135, 150],
+  "selection_bg": [54,  58,  79],
+  "selection_fg": [202, 211, 245]
+}

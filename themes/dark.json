@@ -1,0 +1,19 @@
+{
+  "name": "Dark",
+  "author": "liteconfig",
+  "surface":      [18,  18,  24],
+  "surface_alt":  [30,  30,  40],
+  "primary":      [135, 180, 255],
+  "secondary":    [200, 170, 255],
+  "accent":       [255, 200, 120],
+  "muted":        [130, 130, 140],
+  "border":       [60,  60,  75],
+  "border_focus": [135, 180, 255],
+  "text":         [230, 230, 240],
+  "text_dim":     [170, 170, 180],
+  "success":      [130, 210, 160],
+  "warning":      [255, 200, 120],
+  "danger":       [255, 120, 140],
+  "selection_bg": [50,  60,  90],
+  "selection_fg": [255, 255, 255]
+}

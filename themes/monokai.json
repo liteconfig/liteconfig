@@ -1,0 +1,19 @@
+{
+  "name": "Monokai",
+  "author": "Wimer Hazenberg",
+  "surface":      [39,  40,  34],
+  "surface_alt":  [73,  72,  62],
+  "primary":      [102, 217, 239],
+  "secondary":    [174, 129, 255],
+  "accent":       [230, 219, 116],
+  "muted":        [117, 113, 94],
+  "border":       [73,  72,  62],
+  "border_focus": [102, 217, 239],
+  "text":         [248, 248, 242],
+  "text_dim":     [190, 188, 180],
+  "success":      [166, 226, 46],
+  "warning":      [230, 219, 116],
+  "danger":       [249, 38,  114],
+  "selection_bg": [73,  72,  62],
+  "selection_fg": [248, 248, 242]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "Catppuccin Frappé",
+  "author": "Catppuccin",
+  "surface":      [48,  52,  70],
+  "surface_alt":  [65,  69,  89],
+  "primary":      [140, 170, 238],
+  "secondary":    [202, 158, 230],
+  "accent":       [239, 159, 118],
+  "muted":        [131, 139, 167],
+  "border":       [98,  104, 128],
+  "border_focus": [140, 170, 238],
+  "text":         [198, 208, 245],
+  "text_dim":     [160, 166, 196],
+  "success":      [166, 209, 137],
+  "warning":      [229, 200, 144],
+  "danger":       [231, 130, 132],
+  "selection_bg": [65,  69,  89],
+  "selection_fg": [198, 208, 245]
+}

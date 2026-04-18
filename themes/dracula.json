@@ -1,0 +1,19 @@
+{
+  "name": "Dracula",
+  "author": "Zeno Rocha",
+  "surface":      [40,  42,  54],
+  "surface_alt":  [68,  71,  90],
+  "primary":      [189, 147, 249],
+  "secondary":    [255, 121, 198],
+  "accent":       [241, 250, 140],
+  "muted":        [98,  114, 164],
+  "border":       [68,  71,  90],
+  "border_focus": [189, 147, 249],
+  "text":         [248, 248, 242],
+  "text_dim":     [170, 170, 180],
+  "success":      [80,  250, 123],
+  "warning":      [241, 250, 140],
+  "danger":       [255, 85,  85],
+  "selection_bg": [68,  71,  90],
+  "selection_fg": [248, 248, 242]
+}

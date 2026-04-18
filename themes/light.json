@@ -1,0 +1,19 @@
+{
+  "name": "Light",
+  "author": "liteconfig",
+  "surface":      [248, 248, 250],
+  "surface_alt":  [232, 232, 240],
+  "primary":      [60,  100, 200],
+  "secondary":    [130, 80,  190],
+  "accent":       [200, 130, 30],
+  "muted":        [120, 120, 130],
+  "border":       [200, 200, 210],
+  "border_focus": [60,  100, 200],
+  "text":         [30,  30,  40],
+  "text_dim":     [90,  90,  100],
+  "success":      [50,  150, 80],
+  "warning":      [200, 130, 30],
+  "danger":       [200, 50,  70],
+  "selection_bg": [210, 225, 255],
+  "selection_fg": [30,  30,  40]
+}

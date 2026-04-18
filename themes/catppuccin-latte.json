@@ -1,0 +1,19 @@
+{
+  "name": "Catppuccin Latte",
+  "author": "Catppuccin",
+  "surface":      [239, 241, 245],
+  "surface_alt":  [204, 208, 218],
+  "primary":      [30,  102, 245],
+  "secondary":    [136, 57,  239],
+  "accent":       [254, 100, 11],
+  "muted":        [140, 143, 161],
+  "border":       [172, 176, 190],
+  "border_focus": [30,  102, 245],
+  "text":         [76,  79,  105],
+  "text_dim":     [116, 120, 152],
+  "success":      [64,  160, 43],
+  "warning":      [223, 142, 29],
+  "danger":       [210, 15,  57],
+  "selection_bg": [204, 208, 218],
+  "selection_fg": [76,  79,  105]
+}

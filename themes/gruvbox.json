@@ -1,0 +1,19 @@
+{
+  "name": "Gruvbox",
+  "author": "Pavel Pertsev",
+  "surface":      [40,  40,  40],
+  "surface_alt":  [60,  56,  54],
+  "primary":      [131, 165, 152],
+  "secondary":    [211, 134, 155],
+  "accent":       [250, 189, 47],
+  "muted":        [146, 131, 116],
+  "border":       [80,  73,  69],
+  "border_focus": [250, 189, 47],
+  "text":         [235, 219, 178],
+  "text_dim":     [189, 174, 147],
+  "success":      [184, 187, 38],
+  "warning":      [250, 189, 47],
+  "danger":       [251, 73,  52],
+  "selection_bg": [80,  73,  69],
+  "selection_fg": [235, 219, 178]
+}
