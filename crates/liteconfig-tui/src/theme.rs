@@ -223,7 +223,7 @@ pub fn key_label(action: KeyAction) -> String {
     match action {
         KeyAction::CommandPalette => format!("{}K", mod_key_label()),
         KeyAction::Help => "F1".to_string(),
-        KeyAction::Quit => format!("{}Q", mod_key_label()),
+        KeyAction::Quit => "q".to_string(),
         KeyAction::SelectAll => format!("{}A", mod_key_label()),
         KeyAction::Duplicate => format!("{}D", mod_key_label()),
     }

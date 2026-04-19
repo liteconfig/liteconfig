@@ -1,7 +1,6 @@
 //! Profiles tab: one sub-table per agent, listing its profiles with an
 //! indicator marking the one currently live on this machine.
 
-use liteconfig_core::model::agent::ALL_AGENT_KINDS;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -29,15 +28,20 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
         return;
     }
 
+    // Only agents with a profile concept; skips Cursor.
+    let agents = App::profile_agents();
     // One block per agent, stacked vertically. Equal share of height for now.
-    let n = ALL_AGENT_KINDS.len() as u16;
+    let n = agents.len() as u16;
+    if n == 0 {
+        return;
+    }
     let constraints: Vec<Constraint> = (0..n).map(|_| Constraint::Ratio(1, n as u32)).collect();
     let slots = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(inner);
 
-    for (i, agent) in ALL_AGENT_KINDS.iter().enumerate() {
+    for (i, agent) in agents.iter().enumerate() {
         let focused = app.focused_agent_idx == i;
         let slot = slots[i];
         let Some(view) = app.profile_views.get(agent) else {

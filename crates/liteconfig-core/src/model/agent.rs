@@ -15,9 +15,15 @@ pub enum AgentKind {
     Claude,
     Codex,
     Gemini,
+    Cursor,
 }
 
-pub const ALL_AGENT_KINDS: &[AgentKind] = &[AgentKind::Claude, AgentKind::Codex, AgentKind::Gemini];
+pub const ALL_AGENT_KINDS: &[AgentKind] = &[
+    AgentKind::Claude,
+    AgentKind::Codex,
+    AgentKind::Gemini,
+    AgentKind::Cursor,
+];
 
 impl AgentKind {
     pub fn id(self) -> &'static str {
@@ -25,6 +31,7 @@ impl AgentKind {
             AgentKind::Claude => "claude",
             AgentKind::Codex => "codex",
             AgentKind::Gemini => "gemini",
+            AgentKind::Cursor => "cursor",
         }
     }
 
@@ -33,16 +40,25 @@ impl AgentKind {
             AgentKind::Claude => "Claude Code",
             AgentKind::Codex => "Codex",
             AgentKind::Gemini => "Gemini CLI",
+            AgentKind::Cursor => "Cursor",
         }
     }
 
-    /// Two-letter label used inside agent pills (`Cl`, `Cx`, `Gm`).
+    /// Two-letter label used inside agent pills (`Cl`, `Cx`, `Gm`, `Cr`).
     pub fn short_label(self) -> &'static str {
         match self {
             AgentKind::Claude => "Cl",
             AgentKind::Codex => "Cx",
             AgentKind::Gemini => "Gm",
+            AgentKind::Cursor => "Cr",
         }
+    }
+
+    /// Whether this agent has a "profile settings" concept (full provider
+    /// config swap). Cursor does not — it only participates in MCP + skills
+    /// + rules sync.
+    pub fn supports_profiles(self) -> bool {
+        !matches!(self, AgentKind::Cursor)
     }
 }
 
@@ -60,6 +76,7 @@ impl FromStr for AgentKind {
             "claude" => Ok(AgentKind::Claude),
             "codex" => Ok(AgentKind::Codex),
             "gemini" => Ok(AgentKind::Gemini),
+            "cursor" => Ok(AgentKind::Cursor),
             other => Err(Error::UnknownAgent(other.to_string())),
         }
     }

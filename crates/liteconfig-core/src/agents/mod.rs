@@ -1,11 +1,12 @@
 //! The `AgentAdapter` abstraction: one implementation per supported agent.
 //!
-//! Adding a new agent means:
-//!   1. Add a variant to `AgentKind`.
-//!   2. Implement `AgentAdapter` for it.
-//!   3. Register the adapter in `registry()`.
+//! To add a new agent:
+//! 1. Add a variant to [`crate::model::agent::AgentKind`].
+//! 2. Implement [`AgentAdapter`] in a new module (e.g., `claude.rs`).
+//! 3. Register the adapter in [`registry()`] and add `pub mod <agent>;` above.
+//! 4. Add path helpers to [`crate::paths`] and a `PathOverrides` field to [`crate::settings::Settings`].
 //!
-//! Nothing in the service layer needs to change.
+//! Services (`profile_service`, `skill_service`, `rule_service`, `mcp_service`) loop over  [`crate::model::agent::ALL_AGENT_KINDS`] and call adapters via [`for_kind()`] — no changes needed.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -20,6 +21,7 @@ use crate::{Error, Result};
 
 pub mod claude;
 pub mod codex;
+pub mod cursor;
 pub mod gemini;
 
 /// The canonical file paths an agent cares about, resolved for the current
@@ -75,6 +77,7 @@ pub fn registry() -> &'static [Box<dyn AgentAdapter>] {
             Box::new(claude::ClaudeAdapter),
             Box::new(codex::CodexAdapter),
             Box::new(gemini::GeminiAdapter),
+            Box::new(cursor::CursorAdapter),
         ];
         // Sanity-check: every AgentKind variant has an adapter.
         for k in ALL_AGENT_KINDS {

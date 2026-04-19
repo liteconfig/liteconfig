@@ -107,6 +107,40 @@ pub fn switch(
     Ok(())
 }
 
+/// Import existing live configs into the DB as profiles. Runs once per
+/// agent that `supports_profiles()`: reads the agent's live config, redacts
+/// any raw secrets, and inserts a profile named `<agent>-imported` if no
+/// profile with that name exists for that agent yet.
+///
+/// Returns the list of profiles that were newly created (may be empty).
+pub fn import_from_live(
+    db: &Database,
+    settings: &Settings,
+    secrets: &SecretStore,
+) -> Result<Vec<Profile>> {
+    use crate::model::agent::ALL_AGENT_KINDS;
+    let mut created = Vec::new();
+    for agent in ALL_AGENT_KINDS.iter().copied() {
+        if !agent.supports_profiles() {
+            continue;
+        }
+        let adapter = agents::for_kind(agent)?;
+        let Some(live) = adapter.read_live(settings)? else {
+            continue;
+        };
+        let name = format!("{}-imported", agent.id());
+        let existing = db.list_profiles(agent)?.into_iter().any(|p| p.name == name);
+        if existing {
+            continue;
+        }
+        let redacted = secrets_service::redact(&live, secrets);
+        let profile = Profile::new(agent, name, redacted);
+        db.upsert_profile(&profile)?;
+        created.push(profile);
+    }
+    Ok(created)
+}
+
 /// Backfill the currently-active profile from the live config, without
 /// switching. Useful if the user wants to "import" external edits before
 /// touching anything else.

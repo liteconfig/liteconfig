@@ -92,6 +92,21 @@ pub fn gemini_settings_path(settings: &Settings) -> Result<PathBuf> {
     Ok(gemini_config_dir(settings)?.join("settings.json"))
 }
 
+pub fn cursor_config_dir(settings: &Settings) -> Result<PathBuf> {
+    if let Some(p) = settings.path_overrides.cursor_config_dir.as_ref() {
+        return Ok(PathBuf::from(p));
+    }
+    Ok(home_dir()?.join(".cursor"))
+}
+
+pub fn cursor_mcp_path(settings: &Settings) -> Result<PathBuf> {
+    Ok(cursor_config_dir(settings)?.join("mcp.json"))
+}
+
+pub fn cursor_rules_dir(settings: &Settings) -> Result<PathBuf> {
+    Ok(cursor_config_dir(settings)?.join("rules"))
+}
+
 // ---------- helpers ----------
 
 fn home_dir() -> Result<PathBuf> {

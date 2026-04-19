@@ -120,6 +120,10 @@ fn handle_rules_key(app: &mut App, key: KeyEvent) -> bool {
             app.sync_all_rules();
             true
         }
+        (KeyCode::Char('i'), KeyModifiers::NONE) => {
+            app.import_rules_from_live();
+            true
+        }
         _ => false,
     }
 }
@@ -180,6 +184,10 @@ fn handle_profiles_key(app: &mut App, key: KeyEvent) -> bool {
             app.switch_focused_profile();
             true
         }
+        (KeyCode::Char('i'), KeyModifiers::NONE) => {
+            app.import_profiles_from_live();
+            true
+        }
         _ => false,
     }
 }
@@ -224,6 +232,10 @@ fn handle_skills_key(app: &mut App, key: KeyEvent) -> bool {
         }
         (KeyCode::Char('A'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
             app.clear_skill_selection();
+            true
+        }
+        (KeyCode::Char('i'), KeyModifiers::NONE) => {
+            app.import_skills_from_live();
             true
         }
         _ => false,

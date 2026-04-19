@@ -112,6 +112,93 @@ pub fn set_sync_method(db: &Database, id: &str, method: SyncMethod) -> Result<Sk
     Ok(skill)
 }
 
+/// Scan each agent's skills directory for existing subdirs and register them
+/// in the DB. Skills found in multiple agents' directories are de-duped by
+/// name — the first-seen directory becomes canonical and subsequent hits
+/// merely flip that agent's `enabled` bit. Idempotent: rerunning never
+/// inserts a duplicate row for a name already present.
+pub fn scan_from_live(db: &Database, settings: &Settings) -> Result<Vec<Skill>> {
+    use std::collections::BTreeMap;
+    let mut existing_by_name: BTreeMap<String, Skill> = db
+        .list_skills()?
+        .into_iter()
+        .map(|s| (s.name.clone(), s))
+        .collect();
+
+    let mut created: Vec<Skill> = Vec::new();
+    let now = chrono::Utc::now().timestamp_millis();
+
+    for agent in crate::model::agent::ALL_AGENT_KINDS.iter().copied() {
+        let adapter = agents::for_kind(agent)?;
+        let Some(skills_dir) = adapter.paths(settings)?.skills_dir else {
+            continue;
+        };
+        if !skills_dir.exists() {
+            continue;
+        }
+        let entries = match std::fs::read_dir(&skills_dir) {
+            Ok(it) => it,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(name) = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+            else {
+                continue;
+            };
+
+            if let Some(existing) = existing_by_name.get_mut(&name) {
+                if !existing.is_enabled_for(agent) {
+                    existing.enabled.insert(agent, true);
+                    existing.updated_at = now;
+                    db.upsert_skill(existing)?;
+                }
+                continue;
+            }
+
+            let description = read_skill_description(&path);
+            let mut enabled = std::collections::BTreeMap::new();
+            enabled.insert(agent, true);
+            let skill = Skill {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: name.clone(),
+                description,
+                directory: path.clone(),
+                source: SkillSource::Local,
+                sync_method: SyncMethod::Inherit,
+                enabled,
+                content_hash: None,
+                installed_at: now,
+                updated_at: now,
+            };
+            db.upsert_skill(&skill)?;
+            existing_by_name.insert(name, skill.clone());
+            created.push(skill);
+        }
+    }
+    Ok(created)
+}
+
+fn read_skill_description(dir: &Path) -> Option<String> {
+    for candidate in ["SKILL.md", "README.md", "readme.md"] {
+        let p = dir.join(candidate);
+        if let Ok(text) = std::fs::read_to_string(&p) {
+            let first = text
+                .lines()
+                .map(|l| l.trim_start_matches('#').trim())
+                .find(|l| !l.is_empty())?;
+            return Some(first.to_string());
+        }
+    }
+    None
+}
+
 /// Sync one skill: materialize it into every enabled agent's skills dir
 /// (symlink or copy per resolved method). Agents where the skill is disabled
 /// have any existing materialization removed.

@@ -199,7 +199,53 @@ impl App {
         app.reload_mcp()?;
         app.reload_rules()?;
         app.reload_backups();
+        app.auto_import_if_empty();
         Ok(app)
+    }
+
+    /// On first launch (all tables empty), pull in whatever profiles / skills /
+    /// rules / MCP servers already exist in the user's live configs. Silent —
+    /// only the resulting toast announces counts.
+    fn auto_import_if_empty(&mut self) {
+        let profiles_empty = self.profile_views.values().all(|v| v.profiles.is_empty());
+        let skills_empty = self.skills_view.skills.is_empty();
+        let rules_empty = self.rules_view.rules.is_empty();
+        let mcp_empty = self.mcp_view.servers.is_empty();
+        if !(profiles_empty && skills_empty && rules_empty && mcp_empty) {
+            return;
+        }
+
+        let mut np = 0usize;
+        let mut ns = 0usize;
+        let mut nr = 0usize;
+        let mut nm = 0usize;
+
+        if let Ok(v) = profile_service::import_from_live(&self.db, &self.settings, &self.secrets) {
+            np = v.len();
+        }
+        if let Ok(v) = skill_service::scan_from_live(&self.db, &self.settings) {
+            ns = v.len();
+        }
+        if let Ok(v) = rule_service::import_from_live(&self.db, &self.settings) {
+            nr = v.len();
+        }
+        if let Ok(v) = mcp_service::import_from_live(&self.db, &self.settings) {
+            nm = v.len();
+        }
+
+        let _ = self.reload_profiles();
+        let _ = self.reload_skills();
+        let _ = self.reload_rules();
+        let _ = self.reload_mcp();
+
+        if np + ns + nr + nm > 0 {
+            self.push_toast(
+                format!(
+                    "Imported {np} profile(s), {ns} skill(s), {nr} rule(s), {nm} MCP server(s)"
+                ),
+                ToastLevel::Info,
+            );
+        }
     }
 
     pub fn reload_profiles(&mut self) -> Result<()> {
@@ -222,9 +268,18 @@ impl App {
         Ok(())
     }
 
-    pub fn focused_agent(&self) -> AgentKind {
+    /// Agents that have a profile concept; drives the Profiles tab layout.
+    pub fn profile_agents() -> Vec<AgentKind> {
         ALL_AGENT_KINDS
-            .get(self.focused_agent_idx)
+            .iter()
+            .copied()
+            .filter(|a| a.supports_profiles())
+            .collect()
+    }
+
+    pub fn focused_agent(&self) -> AgentKind {
+        let list = Self::profile_agents();
+        list.get(self.focused_agent_idx)
             .copied()
             .unwrap_or(AgentKind::Claude)
     }
@@ -276,7 +331,7 @@ impl App {
     }
 
     pub fn move_agent_focus(&mut self, delta: i32) {
-        let n = ALL_AGENT_KINDS.len() as i32;
+        let n = Self::profile_agents().len().max(1) as i32;
         let next = ((self.focused_agent_idx as i32 + delta) % n + n) % n;
         self.focused_agent_idx = next as usize;
     }
@@ -406,6 +461,48 @@ impl App {
         match skill_service::sync_many(&self.db, &self.settings, &ids) {
             Ok(()) => self.push_toast(format!("Synced {count} skills"), ToastLevel::Success),
             Err(e) => self.push_toast(format!("Sync failed: {e}"), ToastLevel::Error),
+        }
+    }
+
+    pub fn import_skills_from_live(&mut self) {
+        match skill_service::scan_from_live(&self.db, &self.settings) {
+            Ok(v) => {
+                let n = v.len();
+                let _ = self.reload_skills();
+                self.push_toast(
+                    format!("Imported {n} skill(s) from live configs"),
+                    ToastLevel::Success,
+                );
+            }
+            Err(e) => self.push_toast(format!("Import failed: {e}"), ToastLevel::Error),
+        }
+    }
+
+    pub fn import_rules_from_live(&mut self) {
+        match rule_service::import_from_live(&self.db, &self.settings) {
+            Ok(v) => {
+                let n = v.len();
+                let _ = self.reload_rules();
+                self.push_toast(
+                    format!("Imported {n} rule(s) from live configs"),
+                    ToastLevel::Success,
+                );
+            }
+            Err(e) => self.push_toast(format!("Import failed: {e}"), ToastLevel::Error),
+        }
+    }
+
+    pub fn import_profiles_from_live(&mut self) {
+        match profile_service::import_from_live(&self.db, &self.settings, &self.secrets) {
+            Ok(v) => {
+                let n = v.len();
+                let _ = self.reload_profiles();
+                self.push_toast(
+                    format!("Imported {n} profile(s) from live configs"),
+                    ToastLevel::Success,
+                );
+            }
+            Err(e) => self.push_toast(format!("Import failed: {e}"), ToastLevel::Error),
         }
     }
 

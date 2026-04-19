@@ -95,23 +95,38 @@ fn render_tab_bar(frame: &mut Frame<'_>, app: &App, area: Rect) -> Vec<TabHit> {
 
     frame.render_widget(tabs, area);
 
-    // Build click hit regions for each tab label. The ratatui Tabs widget
-    // doesn't expose its layout, so we approximate using the displayed titles.
+    // Build click hit regions for each tab label. Ratatui's `Tabs` widget
+    // renders each title then, between tabs, ` <divider> ` — i.e. a space, the
+    // divider glyph, and another space. Stride is therefore
+    // `title_width + 1 (trailing gap) + divider_width + 1 (leading gap)` →
+    // `title_width + 3` for a 1-cell divider. The previous impl used
+    // `+ 1`, which left every tab offset 2 cells to the left of its true rect.
     // The first row of `area` is the top border; tabs render on the second row.
     let row = area.y + 1;
     let mut col = area.x + 1; // skip left border
+    let right_edge = area.x + area.width.saturating_sub(1); // stay inside right border
+    let last = Tab::ALL.len().saturating_sub(1);
     let mut hits = Vec::with_capacity(Tab::ALL.len());
     for (i, t) in Tab::ALL.iter().enumerate() {
         let label = format!(" {} {} ", i + 1, t.title());
         let w = label.chars().count() as u16;
+        if col >= right_edge {
+            break;
+        }
+        let clamped_w = w.min(right_edge.saturating_sub(col));
         hits.push(TabHit {
             tab: *t,
             x: col,
             y: row,
-            w,
+            w: clamped_w,
             h: 1,
         });
-        col = col.saturating_add(w).saturating_add(1); // +1 for divider
+        // Advance past title + trailing gap + divider + leading gap, except
+        // after the last tab where no divider follows.
+        col = col.saturating_add(w);
+        if i != last {
+            col = col.saturating_add(3);
+        }
     }
     hits
 }
