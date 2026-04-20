@@ -20,6 +20,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     if app.agent_popup.is_some() {
         return handle_agent_popup_key(app, key);
     }
+    if app.method_popup.is_some() {
+        return handle_method_popup_key(app, key);
+    }
 
     // Global bindings (work on every tab).
     match (key.code, key.modifiers) {
@@ -214,6 +217,10 @@ fn handle_skills_key(app: &mut App, key: KeyEvent) -> bool {
             app.cycle_focused_skill_method();
             true
         }
+        (KeyCode::Char('M'), KeyModifiers::SHIFT) | (KeyCode::Char('M'), KeyModifiers::NONE) => {
+            app.open_method_popup_for_focused();
+            true
+        }
         (KeyCode::Char('s'), KeyModifiers::NONE) => {
             app.sync_selected_skills();
             true
@@ -270,6 +277,28 @@ fn handle_agent_popup_key(app: &mut App, key: KeyEvent) -> bool {
         }
         (KeyCode::Esc, _) => {
             app.agent_popup_cancel();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_method_popup_key(app: &mut App, key: KeyEvent) -> bool {
+    match (key.code, key.modifiers) {
+        (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
+            app.method_popup_move(-1);
+            true
+        }
+        (KeyCode::Down | KeyCode::Char('j'), KeyModifiers::NONE) => {
+            app.method_popup_move(1);
+            true
+        }
+        (KeyCode::Enter, _) => {
+            app.method_popup_commit();
+            true
+        }
+        (KeyCode::Esc, _) => {
+            app.method_popup_cancel();
             true
         }
         _ => false,

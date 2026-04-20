@@ -4,5 +4,6 @@
 
 pub mod app;
 pub mod events;
+pub mod tasks;
 pub mod theme;
 pub mod ui;

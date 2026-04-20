@@ -55,6 +55,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     if app.agent_popup.is_some() {
         crate::ui::widgets::agent_popup::render(frame, app, area);
     }
+    if app.method_popup.is_some() {
+        crate::ui::widgets::method_popup::render(frame, app, area);
+    }
 }
 
 fn render_toolbar(frame: &mut Frame<'_>, app: &App, area: Rect) {

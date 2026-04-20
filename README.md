@@ -77,6 +77,10 @@ Every action is **both clickable and keyboard-accessible**. No hidden modes. Vim
 | Backup | `n` / `r` / `p` | Snapshot / restore / push to GitHub |
 | Agent popup | `Space` / `A` / `N` / `Enter` / `Esc` | Toggle / all / none / OK / cancel |
 
+## Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for shipped, in-progress, and planned features.
+
 ## License
 
 Apache-2.0 © 2026 git-pi-e

@@ -10,7 +10,7 @@ use liteconfig_core::model::agent::{AgentKind, ALL_AGENT_KINDS};
 use liteconfig_core::model::mcp::McpServer;
 use liteconfig_core::model::profile::Profile;
 use liteconfig_core::model::rule::Rule;
-use liteconfig_core::model::skill::Skill;
+use liteconfig_core::model::skill::{Skill, SyncMethod};
 use liteconfig_core::paths::liteconfig_dir;
 use liteconfig_core::services::backup_service;
 use liteconfig_core::services::backup_service::Snapshot;
@@ -123,6 +123,26 @@ pub enum AgentPopupTarget {
     Rule,
 }
 
+/// Fixed display order for the per-skill sync-method picker. The popup cursor
+/// indexes into this; `SyncMethod::cycle` uses the same order.
+pub const METHOD_POPUP_CHOICES: [SyncMethod; 4] = [
+    SyncMethod::Auto,
+    SyncMethod::Symlink,
+    SyncMethod::Copy,
+    SyncMethod::Inherit,
+];
+
+/// Modal state for the per-skill sync-method picker. `current` is the
+/// committed method on the skill when the popup opened; `cursor` is the
+/// highlighted row in the picker, which becomes `current` on Enter.
+#[derive(Debug, Clone)]
+pub struct MethodPopup {
+    pub row_id: String,
+    pub row_name: String,
+    pub cursor: usize,
+    pub current: SyncMethod,
+}
+
 /// View-level state for the MCP tab.
 #[derive(Debug, Clone, Default)]
 pub struct McpView {
@@ -165,6 +185,8 @@ pub struct App {
     pub backup_view: BackupView,
     /// When `Some`, the active tab yields input to drive the popup.
     pub agent_popup: Option<AgentPopup>,
+    /// When `Some`, the Skills tab yields input to the sync-method picker.
+    pub method_popup: Option<MethodPopup>,
 
     /// Ordered list of available theme slugs (builtin + user). Populated once
     /// on startup; used to cycle themes in the Settings tab.
@@ -191,6 +213,7 @@ impl App {
             rules_view: RulesView::default(),
             backup_view: BackupView::default(),
             agent_popup: None,
+            method_popup: None,
             available_themes,
             toasts: Vec::new(),
         };
@@ -418,6 +441,58 @@ impl App {
 
     pub fn clear_skill_selection(&mut self) {
         self.skills_view.selected_ids.clear();
+    }
+
+    pub fn open_method_popup_for_focused(&mut self) {
+        let Some(skill) = self.focused_skill() else {
+            return;
+        };
+        let current = skill.sync_method;
+        let cursor = METHOD_POPUP_CHOICES
+            .iter()
+            .position(|m| *m == current)
+            .unwrap_or(0);
+        self.method_popup = Some(MethodPopup {
+            row_id: skill.id.clone(),
+            row_name: skill.name.clone(),
+            cursor,
+            current,
+        });
+    }
+
+    pub fn method_popup_move(&mut self, delta: i32) {
+        let Some(p) = self.method_popup.as_mut() else {
+            return;
+        };
+        let n = METHOD_POPUP_CHOICES.len() as i32;
+        p.cursor = (((p.cursor as i32 + delta) % n + n) % n) as usize;
+    }
+
+    pub fn method_popup_cancel(&mut self) {
+        self.method_popup = None;
+    }
+
+    pub fn method_popup_commit(&mut self) {
+        let Some(p) = self.method_popup.take() else {
+            return;
+        };
+        let Some(method) = METHOD_POPUP_CHOICES.get(p.cursor).copied() else {
+            return;
+        };
+        match skill_service::set_sync_method(&self.db, &p.row_id, method) {
+            Ok(_) => {
+                let _ = self.reload_skills();
+                if let Err(e) = skill_service::sync_one(&self.db, &self.settings, &p.row_id) {
+                    self.push_toast(format!("Resync failed: {e}"), ToastLevel::Error);
+                    return;
+                }
+                self.push_toast(
+                    format!("{} → {}", p.row_name, method.as_str()),
+                    ToastLevel::Success,
+                );
+            }
+            Err(e) => self.push_toast(format!("Change failed: {e}"), ToastLevel::Error),
+        }
     }
 
     pub fn cycle_focused_skill_method(&mut self) {
