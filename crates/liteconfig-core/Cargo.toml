@@ -25,6 +25,7 @@ rusqlite.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 git2.workspace = true
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -210,6 +210,8 @@ const SKILLS: &[HelpEntry] = &[
     HelpEntry::Key { key: "s", desc: "sync all selected" },
     HelpEntry::Key { key: "S", desc: "sync every skill (runs in background for file-backed DBs)" },
     HelpEntry::Key { key: "i", desc: "import skills from live agent dirs on disk" },
+    HelpEntry::Key { key: "n", desc: "open the new-skill chooser (presets / search / paste URL)" },
+    HelpEntry::Key { key: "Ctrl+F", desc: "live-search skills.sh and install a hit" },
     HelpEntry::Blank,
     HelpEntry::Section("Global"),
     HelpEntry::Key { key: "Tab / 1-7", desc: "tabs · L activity · ? help · q quit" },
@@ -223,6 +225,7 @@ const MCP: &[HelpEntry] = &[
     HelpEntry::Key { key: "Space", desc: "toggle selection" },
     HelpEntry::Key { key: "/", desc: "filter by name or command" },
     HelpEntry::Key { key: "a", desc: "agent popup" },
+    HelpEntry::Key { key: "n", desc: "open the new-MCP chooser (curated presets: fetch / time / memory / …)" },
     HelpEntry::Key { key: "i", desc: "import MCP servers from live configs" },
     HelpEntry::Key { key: "d", desc: "delete focused server" },
     HelpEntry::Key { key: "S", desc: "sync to all agents (background)" },
@@ -262,6 +265,10 @@ const BACKUP: &[HelpEntry] = &[
     HelpEntry::Key {
         key: "p",
         desc: "push backup to GitHub (requires setup in Settings → GitHub backup)",
+    },
+    HelpEntry::Key {
+        key: "d d",
+        desc: "delete focused snapshot (press twice within 2s to confirm)",
     },
     HelpEntry::Blank,
     HelpEntry::Section("Global"),

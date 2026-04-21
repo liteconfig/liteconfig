@@ -23,6 +23,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     if app.method_popup.is_some() {
         return handle_method_popup_key(app, key);
     }
+    if app.presets_popup.is_some() {
+        return handle_presets_popup_key(app, key);
+    }
+    if app.search_popup.is_some() {
+        return handle_search_popup_key(app, key);
+    }
     if app.show_activity {
         if matches!(
             (key.code, key.modifiers),
@@ -136,6 +142,11 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) -> bool {
 }
 
 fn handle_backup_key(app: &mut App, key: KeyEvent) -> bool {
+    // Two-phase delete: `d` twice deletes; any other key clears the arm so
+    // the prompt doesn't silently outlive the user's attention.
+    if !matches!(key.code, KeyCode::Char('d')) {
+        app.clear_backup_delete_arm();
+    }
     match (key.code, key.modifiers) {
         (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
             app.move_backup_focus(-1);
@@ -155,6 +166,10 @@ fn handle_backup_key(app: &mut App, key: KeyEvent) -> bool {
         }
         (KeyCode::Char('p'), KeyModifiers::NONE) => {
             app.push_github_backup();
+            true
+        }
+        (KeyCode::Char('d'), KeyModifiers::NONE) => {
+            app.delete_focused_snapshot();
             true
         }
         _ => false,
@@ -277,6 +292,10 @@ fn handle_mcp_key(app: &mut App, key: KeyEvent) -> bool {
             app.sync_all_mcp();
             true
         }
+        (KeyCode::Char('n'), KeyModifiers::NONE) => {
+            app.open_new_mcp_menu();
+            true
+        }
         _ => false,
     }
 }
@@ -389,6 +408,14 @@ fn handle_skills_key(app: &mut App, key: KeyEvent) -> bool {
             app.import_skills_from_live();
             true
         }
+        (KeyCode::Char('n'), KeyModifiers::NONE) => {
+            app.open_new_skill_menu();
+            true
+        }
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+            app.open_search_skills();
+            true
+        }
         _ => false,
     }
 }
@@ -427,6 +454,62 @@ fn handle_agent_popup_key(app: &mut App, key: KeyEvent) -> bool {
     }
 }
 
+fn handle_search_popup_key(app: &mut App, key: KeyEvent) -> bool {
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) => {
+            app.search_popup_cancel();
+            true
+        }
+        (KeyCode::Enter, _) => {
+            app.search_popup_enter();
+            true
+        }
+        (KeyCode::Tab, _) => {
+            app.search_popup_toggle_focus();
+            true
+        }
+        (KeyCode::Backspace, _) => {
+            app.search_popup_pop();
+            true
+        }
+        (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
+            app.search_popup_move(-1);
+            true
+        }
+        (KeyCode::Down | KeyCode::Char('j'), KeyModifiers::NONE) => {
+            app.search_popup_move(1);
+            true
+        }
+        (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+            app.search_popup_push(c);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_presets_popup_key(app: &mut App, key: KeyEvent) -> bool {
+    match (key.code, key.modifiers) {
+        (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
+            app.presets_popup_move(-1);
+            true
+        }
+        (KeyCode::Down | KeyCode::Char('j'), KeyModifiers::NONE) => {
+            app.presets_popup_move(1);
+            true
+        }
+        (KeyCode::Enter, _) => {
+            app.presets_popup_commit();
+            true
+        }
+        (KeyCode::Esc, _) => {
+            app.presets_popup_cancel();
+            true
+        }
+        _ => false,
+    }
+}
+
 fn handle_method_popup_key(app: &mut App, key: KeyEvent) -> bool {
     match (key.code, key.modifiers) {
         (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
@@ -449,11 +532,22 @@ fn handle_method_popup_key(app: &mut App, key: KeyEvent) -> bool {
     }
 }
 
-/// Mouse events: for now we only react to left-click inside the tab bar.
-/// More hit-testing lands as the UI grows.
-pub fn handle_mouse(app: &mut App, event: MouseEvent, tab_bar_hits: &[TabHit]) -> bool {
+/// Mouse events: left-click walks button hits first, then tab bar hits. More
+/// hit-testing lands as the UI grows.
+pub fn handle_mouse(
+    app: &mut App,
+    event: MouseEvent,
+    tab_bar_hits: &[TabHit],
+    button_hits: &[ButtonHit],
+) -> bool {
     if !matches!(event.kind, MouseEventKind::Down(MouseButton::Left)) {
         return false;
+    }
+    for hit in button_hits {
+        if hit.contains(event.column, event.row) {
+            dispatch_button_action(app, hit.action);
+            return true;
+        }
     }
     for hit in tab_bar_hits {
         if hit.contains(event.column, event.row) {
@@ -462,6 +556,27 @@ pub fn handle_mouse(app: &mut App, event: MouseEvent, tab_bar_hits: &[TabHit]) -
         }
     }
     false
+}
+
+fn dispatch_button_action(app: &mut App, action: ButtonAction) {
+    match action {
+        ButtonAction::SkillsNew => app.open_new_skill_menu(),
+        ButtonAction::SkillsDiscover => app.open_search_skills(),
+        ButtonAction::SkillsImport => app.import_skills_from_live(),
+        ButtonAction::SkillsSyncSelected => app.sync_selected_skills(),
+        ButtonAction::SkillsSyncAll => app.sync_all_skills(),
+        ButtonAction::BackupSnapshot => app.create_snapshot(),
+        ButtonAction::BackupRestore => app.restore_focused_snapshot(),
+        ButtonAction::BackupPush => app.push_github_backup(),
+        ButtonAction::BackupDelete => app.delete_focused_snapshot(),
+        ButtonAction::McpNew => app.open_new_mcp_menu(),
+        ButtonAction::McpSyncAll => app.sync_all_mcp(),
+        ButtonAction::McpImport => app.import_mcp_from_live(),
+        ButtonAction::McpDelete => app.delete_focused_mcp(),
+        ButtonAction::RulesSyncAll => app.sync_all_rules(),
+        ButtonAction::RulesImport => app.import_rules_from_live(),
+        ButtonAction::RulesDelete => app.delete_focused_rule(),
+    }
 }
 
 /// One tab label's rendered rect + the tab it activates.
@@ -475,6 +590,43 @@ pub struct TabHit {
 }
 
 impl TabHit {
+    pub fn contains(self, col: u16, row: u16) -> bool {
+        col >= self.x && col < self.x + self.w && row >= self.y && row < self.y + self.h
+    }
+}
+
+/// An action triggered by clicking a toolbar button on one of the tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonAction {
+    SkillsNew,
+    SkillsDiscover,
+    SkillsImport,
+    SkillsSyncSelected,
+    SkillsSyncAll,
+    BackupSnapshot,
+    BackupRestore,
+    BackupPush,
+    BackupDelete,
+    McpNew,
+    McpSyncAll,
+    McpImport,
+    McpDelete,
+    RulesSyncAll,
+    RulesImport,
+    RulesDelete,
+}
+
+/// One toolbar button's rendered rect + the action it fires.
+#[derive(Debug, Clone, Copy)]
+pub struct ButtonHit {
+    pub action: ButtonAction,
+    pub x: u16,
+    pub y: u16,
+    pub w: u16,
+    pub h: u16,
+}
+
+impl ButtonHit {
     pub fn contains(self, col: u16, row: u16) -> bool {
         col >= self.x && col < self.x + self.w && row >= self.y && row < self.y + self.h
     }

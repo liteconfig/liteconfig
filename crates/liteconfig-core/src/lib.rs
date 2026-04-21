@@ -10,6 +10,7 @@ pub mod error;
 pub mod fs_util;
 pub mod model;
 pub mod paths;
+pub mod presets;
 pub mod services;
 pub mod settings;
 

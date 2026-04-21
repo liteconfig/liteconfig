@@ -147,6 +147,14 @@ impl TaskRunner {
             .filter(|e| matches!(e.status, TaskStatus::Running))
             .count()
     }
+
+    /// Every in-flight task, most recently submitted first. The status bar
+    /// uses this to show the currently-running task's name.
+    pub fn running_entries(&self) -> impl Iterator<Item = &TaskLogEntry> {
+        self.log
+            .iter()
+            .filter(|e| matches!(e.status, TaskStatus::Running))
+    }
 }
 
 impl Default for TaskRunner {

@@ -1,6 +1,9 @@
 pub mod activity_panel;
 pub mod agent_popup;
+pub mod button_bar;
 pub mod filter_bar;
 pub mod help_overlay;
 pub mod method_popup;
+pub mod presets_popup;
+pub mod search_skills_popup;
 pub mod toast;

@@ -94,11 +94,11 @@ fn main_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut Ap
                     events::handle_key(app, key);
                 }
                 Event::Mouse(mouse) => {
-                    let hits = last_frame_output
+                    let (tab_hits, btn_hits) = last_frame_output
                         .as_ref()
-                        .map(|o| o.tab_hits.as_slice())
-                        .unwrap_or(&[]);
-                    events::handle_mouse(app, mouse, hits);
+                        .map(|o| (o.tab_hits.as_slice(), o.button_hits.as_slice()))
+                        .unwrap_or((&[], &[]));
+                    events::handle_mouse(app, mouse, tab_hits, btn_hits);
                 }
                 Event::Resize(_, _) => { /* next draw handles it */ }
                 _ => {}

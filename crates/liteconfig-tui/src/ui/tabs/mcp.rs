@@ -10,8 +10,10 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
+use crate::events::{ButtonAction, ButtonHit};
+use crate::ui::widgets::button_bar::{self, ToolbarButton};
 
-pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
+pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<ButtonHit>) {
     let theme = app.theme;
 
     let outer = Block::default()
@@ -26,7 +28,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
-    if inner.height < 5 {
+    if inner.height < 8 {
         return;
     }
 
@@ -35,14 +37,14 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .constraints([
             Constraint::Length(1), // toolbar
             Constraint::Length(1), // legend
-            Constraint::Length(1), // filter bar
+            Constraint::Length(3), // filter bar (boxed)
             Constraint::Length(1), // header
             Constraint::Min(1),    // list
             Constraint::Length(1), // summary
         ])
         .split(inner);
 
-    render_toolbar(frame, app, layout[0]);
+    render_toolbar(frame, app, layout[0], hits);
     render_legend(frame, app, layout[1]);
     crate::ui::widgets::filter_bar::render(
         frame,
@@ -59,28 +61,36 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     if app.agent_popup.is_some() {
         crate::ui::widgets::agent_popup::render(frame, app, area);
     }
+    if app.presets_popup.is_some() {
+        crate::ui::widgets::presets_popup::render(frame, app, area);
+    }
 }
 
-fn render_toolbar(frame: &mut Frame<'_>, app: &App, area: Rect) {
+fn render_toolbar(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<ButtonHit>) {
     let theme = app.theme;
-    let line = Line::from(vec![
-        button(" Sync all (S) ", theme.primary, theme),
-        Span::raw("  "),
-        button(" Import live (i) ", theme.accent, theme),
-        Span::raw("  "),
-        button(" Delete (d) ", theme.danger, theme),
-    ]);
-    frame.render_widget(Paragraph::new(line).style(theme.default_style()), area);
-}
-
-fn button(label: &str, color: ratatui::style::Color, theme: crate::theme::Theme) -> Span<'_> {
-    Span::styled(
-        label.to_string(),
-        Style::default()
-            .fg(theme.selection_fg)
-            .bg(color)
-            .add_modifier(Modifier::BOLD),
-    )
+    let buttons = [
+        ToolbarButton {
+            label: " + New (n) ",
+            color: theme.accent,
+            action: ButtonAction::McpNew,
+        },
+        ToolbarButton {
+            label: " Sync all (S) ",
+            color: theme.primary,
+            action: ButtonAction::McpSyncAll,
+        },
+        ToolbarButton {
+            label: " Import live (i) ",
+            color: theme.accent,
+            action: ButtonAction::McpImport,
+        },
+        ToolbarButton {
+            label: " Delete (d) ",
+            color: theme.danger,
+            action: ButtonAction::McpDelete,
+        },
+    ];
+    button_bar::render(frame, theme, area, &buttons, hits);
 }
 
 fn render_legend(frame: &mut Frame<'_>, app: &App, area: Rect) {

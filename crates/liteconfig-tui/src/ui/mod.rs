@@ -14,11 +14,12 @@ use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use ratatui::Frame;
 
 use crate::app::{App, Tab};
-use crate::events::TabHit;
+use crate::events::{ButtonHit, TabHit};
 use crate::theme::{key_label, KeyAction};
 
 pub struct FrameOutput {
     pub tab_hits: Vec<TabHit>,
+    pub button_hits: Vec<ButtonHit>,
 }
 
 pub fn render(frame: &mut Frame<'_>, app: &App) -> FrameOutput {
@@ -39,14 +40,18 @@ pub fn render(frame: &mut Frame<'_>, app: &App) -> FrameOutput {
         .split(area);
 
     let tab_hits = render_tab_bar(frame, app, layout[0]);
-    render_body(frame, app, layout[1]);
+    let mut button_hits: Vec<ButtonHit> = Vec::new();
+    render_body(frame, app, layout[1], &mut button_hits);
     render_hint_bar(frame, app, layout[2]);
     status_bar::render(frame, app, layout[3]);
     widgets::activity_panel::render(frame, app, area);
     widgets::help_overlay::render(frame, app, area);
     widgets::toast::render(frame, app, area);
 
-    FrameOutput { tab_hits }
+    FrameOutput {
+        tab_hits,
+        button_hits,
+    }
 }
 
 fn render_tab_bar(frame: &mut Frame<'_>, app: &App, area: Rect) -> Vec<TabHit> {
@@ -133,19 +138,52 @@ fn render_tab_bar(frame: &mut Frame<'_>, app: &App, area: Rect) -> Vec<TabHit> {
     hits
 }
 
-fn render_body(frame: &mut Frame<'_>, app: &App, area: Rect) {
+fn render_body(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<ButtonHit>) {
     match app.active_tab {
         Tab::Profiles => tabs::profiles::render(frame, app, area),
-        Tab::Skills => tabs::skills::render(frame, app, area),
-        Tab::Mcp => tabs::mcp::render(frame, app, area),
-        Tab::Rules => tabs::rules::render(frame, app, area),
-        Tab::Backup => tabs::backup::render(frame, app, area),
+        Tab::Skills => tabs::skills::render(frame, app, area, hits),
+        Tab::Mcp => tabs::mcp::render(frame, app, area, hits),
+        Tab::Rules => tabs::rules::render(frame, app, area, hits),
+        Tab::Backup => tabs::backup::render(frame, app, area, hits),
         Tab::Sessions => tabs::placeholder::render(frame, app, area, "Sessions", "v1.1"),
         Tab::Settings => tabs::settings::render(frame, app, area),
     }
 }
 
 fn render_hint_bar(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    // Split the 2-row region: row 0 = key hints, row 1 = task-progress
+    // banner (blank when nothing is running).
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(area);
+    render_hints(frame, app, rows[0]);
+    render_task_banner(frame, app, rows[1]);
+}
+
+fn render_task_banner(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    if app.tasks.running_count() == 0 {
+        return;
+    }
+    let theme = app.theme;
+    let glyph = status_bar::spinner_glyph(app.tick_idx);
+    let count = app.tasks.running_count();
+    let name = app
+        .tasks
+        .running_entries()
+        .next()
+        .map(|e| e.name.clone())
+        .unwrap_or_default();
+    let text = if count > 1 {
+        format!(" {glyph} {name} · {} queued", count - 1)
+    } else {
+        format!(" {glyph} {name}")
+    };
+    let p = Paragraph::new(Span::styled(text, theme.accent_style())).style(theme.default_style());
+    frame.render_widget(p, area);
+}
+
+fn render_hints(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let theme = app.theme;
     let hints = match app.active_tab {
         _ if app.agent_popup.is_some() => vec![
@@ -194,6 +232,7 @@ fn render_hint_bar(frame: &mut Frame<'_>, app: &App, area: Rect) {
             hint("n", "snapshot"),
             hint("r", "restore"),
             hint("p", "push GH"),
+            hint("d", "delete (×2)"),
         ],
         Tab::Settings => vec![
             hint("↑↓", "focus row"),

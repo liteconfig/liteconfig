@@ -14,8 +14,10 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
+use crate::events::{ButtonAction, ButtonHit};
+use crate::ui::widgets::button_bar::{self, ToolbarButton};
 
-pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
+pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<ButtonHit>) {
     let theme = app.theme;
 
     let outer = Block::default()
@@ -30,7 +32,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
-    if inner.height < 5 {
+    if inner.height < 10 {
         return;
     }
 
@@ -38,15 +40,15 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // toolbar (buttons)
-            Constraint::Length(1), // legend
-            Constraint::Length(1), // filter bar
+            Constraint::Length(2), // legend (two rows)
+            Constraint::Length(3), // filter bar (boxed)
             Constraint::Length(1), // column header
             Constraint::Min(1),    // list
             Constraint::Length(1), // summary footer
         ])
         .split(inner);
 
-    render_toolbar(frame, app, layout[0]);
+    render_toolbar(frame, app, layout[0], hits);
     render_legend(frame, app, layout[1]);
     render_filter(frame, app, layout[2]);
     render_header(frame, app, layout[3]);
@@ -60,63 +62,87 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     if app.method_popup.is_some() {
         crate::ui::widgets::method_popup::render(frame, app, area);
     }
+    if app.presets_popup.is_some() {
+        crate::ui::widgets::presets_popup::render(frame, app, area);
+    }
+    if app.search_popup.is_some() {
+        crate::ui::widgets::search_skills_popup::render(frame, app, area);
+    }
 }
 
-fn render_toolbar(frame: &mut Frame<'_>, app: &App, area: Rect) {
+fn render_toolbar(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<ButtonHit>) {
     let theme = app.theme;
-    let line = Line::from(vec![
-        button(" + New ", theme.accent, theme),
-        Span::raw("  "),
-        button(" Import… ", theme.accent, theme),
-        Span::raw("  "),
-        button(" Sync selected (s) ", theme.primary, theme),
-        Span::raw("  "),
-        button(" Sync all (S) ", theme.primary, theme),
-    ]);
-    frame.render_widget(Paragraph::new(line).style(theme.default_style()), area);
-}
-
-fn button(label: &str, color: ratatui::style::Color, theme: crate::theme::Theme) -> Span<'_> {
-    Span::styled(
-        label.to_string(),
-        Style::default()
-            .fg(theme.selection_fg)
-            .bg(color)
-            .add_modifier(Modifier::BOLD),
-    )
+    let buttons = [
+        ToolbarButton {
+            label: " + New (n) ",
+            color: theme.accent,
+            action: ButtonAction::SkillsNew,
+        },
+        ToolbarButton {
+            label: " Discover (^F) ",
+            color: theme.accent,
+            action: ButtonAction::SkillsDiscover,
+        },
+        ToolbarButton {
+            label: " Import live (i) ",
+            color: theme.accent,
+            action: ButtonAction::SkillsImport,
+        },
+        ToolbarButton {
+            label: " Sync selected (s) ",
+            color: theme.primary,
+            action: ButtonAction::SkillsSyncSelected,
+        },
+        ToolbarButton {
+            label: " Sync all (S) ",
+            color: theme.primary,
+            action: ButtonAction::SkillsSyncAll,
+        },
+    ];
+    button_bar::render(frame, theme, area, &buttons, hits);
 }
 
 fn render_legend(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let theme = app.theme;
-    let mut spans: Vec<Span<'_>> = vec![
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(area);
+
+    let mut row1: Vec<Span<'_>> = vec![
         Span::styled("Agents: ", Style::default().fg(theme.muted)),
         Span::styled("● on ", Style::default().fg(theme.success)),
-        Span::styled("○ off ", Style::default().fg(theme.muted)),
+        Span::styled("○ off  ", Style::default().fg(theme.muted)),
     ];
     for agent in ALL_AGENT_KINDS {
-        spans.push(Span::styled(
+        row1.push(Span::styled(
             format!("{} ", agent.short_label()),
             Style::default().fg(theme.text),
         ));
     }
-    spans.push(Span::styled(" · ", Style::default().fg(theme.muted)));
-    spans.push(Span::styled(
-        "Method: inherit=workspace default, symlink, copy, auto=OS-picked",
+    row1.push(Span::styled(
+        "  (press ? for help)",
         Style::default().fg(theme.muted),
     ));
-    spans.push(Span::styled(" · ", Style::default().fg(theme.muted)));
-    spans.push(Span::styled(
-        "Source: local/github",
-        Style::default().fg(theme.muted),
-    ));
-    spans.push(Span::styled(" · ", Style::default().fg(theme.muted)));
-    spans.push(Span::styled(
-        "Status: in sync/unknown  (press ?)",
-        Style::default().fg(theme.muted),
-    ));
+
+    let row2 = vec![
+        Span::styled(
+            "Method: inherit=workspace default, symlink, copy, auto=OS-picked",
+            Style::default().fg(theme.muted),
+        ),
+        Span::styled(" · ", Style::default().fg(theme.muted)),
+        Span::styled("Source: local/github", Style::default().fg(theme.muted)),
+        Span::styled(" · ", Style::default().fg(theme.muted)),
+        Span::styled("Status: in sync/unknown", Style::default().fg(theme.muted)),
+    ];
+
     frame.render_widget(
-        Paragraph::new(Line::from(spans)).style(theme.default_style()),
-        area,
+        Paragraph::new(Line::from(row1)).style(theme.default_style()),
+        rows[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(row2)).style(theme.default_style()),
+        rows[1],
     );
 }
 

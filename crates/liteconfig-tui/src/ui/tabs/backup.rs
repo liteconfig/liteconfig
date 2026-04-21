@@ -8,8 +8,10 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
+use crate::events::{ButtonAction, ButtonHit};
+use crate::ui::widgets::button_bar::{self, ToolbarButton};
 
-pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
+pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<ButtonHit>) {
     let theme = app.theme;
 
     let outer = Block::default()
@@ -38,33 +40,38 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
         ])
         .split(inner);
 
-    render_toolbar(frame, app, layout[0]);
+    render_toolbar(frame, app, layout[0], hits);
     render_gh_status(frame, app, layout[1]);
     render_header(frame, app, layout[2]);
     render_list(frame, app, layout[3]);
     render_summary(frame, app, layout[4]);
 }
 
-fn render_toolbar(frame: &mut Frame<'_>, app: &App, area: Rect) {
+fn render_toolbar(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<ButtonHit>) {
     let theme = app.theme;
-    let line = Line::from(vec![
-        button(" Snapshot now (n) ", theme.primary, theme),
-        Span::raw("  "),
-        button(" Restore (r) ", theme.accent, theme),
-        Span::raw("  "),
-        button(" Push GitHub (p) ", theme.accent, theme),
-    ]);
-    frame.render_widget(Paragraph::new(line).style(theme.default_style()), area);
-}
-
-fn button(label: &str, color: ratatui::style::Color, theme: crate::theme::Theme) -> Span<'_> {
-    Span::styled(
-        label.to_string(),
-        Style::default()
-            .fg(theme.selection_fg)
-            .bg(color)
-            .add_modifier(Modifier::BOLD),
-    )
+    let buttons = [
+        ToolbarButton {
+            label: " Snapshot now (n) ",
+            color: theme.primary,
+            action: ButtonAction::BackupSnapshot,
+        },
+        ToolbarButton {
+            label: " Restore (r) ",
+            color: theme.accent,
+            action: ButtonAction::BackupRestore,
+        },
+        ToolbarButton {
+            label: " Push GitHub (p) ",
+            color: theme.accent,
+            action: ButtonAction::BackupPush,
+        },
+        ToolbarButton {
+            label: " Delete (d) ",
+            color: theme.danger,
+            action: ButtonAction::BackupDelete,
+        },
+    ];
+    button_bar::render(frame, theme, area, &buttons, hits);
 }
 
 fn render_gh_status(frame: &mut Frame<'_>, app: &App, area: Rect) {

@@ -57,6 +57,10 @@ fn sync_all_skills_runs_on_background_thread_and_reloads_view() {
     let mut app = App::new(db, settings, secrets).unwrap();
     assert!(app.db.path().is_some(), "file-backed DB should expose path");
 
+    // App::new kicks off a background `Rescan live skills` task; drain it
+    // before we observe queue state for this test's `sync_all_skills` call.
+    pump_until(&mut app, |a| a.tasks.running_count() == 0);
+
     app.sync_all_skills();
     assert_eq!(
         app.tasks.running_count(),

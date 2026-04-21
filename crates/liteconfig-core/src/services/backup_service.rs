@@ -123,6 +123,32 @@ pub fn restore_snapshot(timestamp: &str) -> Result<()> {
     Ok(())
 }
 
+/// Remove a local snapshot directory. Missing directories are treated as a
+/// no-op so a stale UI handle can't surface spurious errors. Refuses empty
+/// timestamps and any component that attempts to escape the backups root
+/// (e.g. `..`) as a defense against caller bugs.
+pub fn delete_snapshot(timestamp: &str) -> Result<()> {
+    if timestamp.trim().is_empty() {
+        return Err(Error::InvalidConfig(
+            "snapshot timestamp cannot be empty".into(),
+        ));
+    }
+    if timestamp.contains('/') || timestamp.contains('\\') || timestamp.contains("..") {
+        return Err(Error::InvalidConfig(format!(
+            "snapshot timestamp contains path separators or traversal: {timestamp}"
+        )));
+    }
+    let path = liteconfig_backups_dir()?.join(timestamp);
+    if !path.exists() {
+        return Ok(());
+    }
+    std::fs::remove_dir_all(&path).map_err(|source| Error::Io {
+        path: path.clone(),
+        source,
+    })?;
+    Ok(())
+}
+
 /// Commit the current DB + skills tree into the local backup repo and push
 /// to the configured remote.
 ///

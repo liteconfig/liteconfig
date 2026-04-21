@@ -12,12 +12,15 @@ use liteconfig_core::model::profile::Profile;
 use liteconfig_core::model::rule::Rule;
 use liteconfig_core::model::skill::{Skill, SyncMethod};
 use liteconfig_core::paths::liteconfig_dir;
+use liteconfig_core::presets::{MCP_PRESETS, SKILL_REPO_PRESETS};
 use liteconfig_core::services::backup_service;
 use liteconfig_core::services::backup_service::Snapshot;
 use liteconfig_core::services::mcp_service;
 use liteconfig_core::services::profile_service;
 use liteconfig_core::services::rule_service;
 use liteconfig_core::services::secrets_service::SecretStore;
+use liteconfig_core::services::skill_index_service::{self, ExternalSkill};
+use liteconfig_core::services::skill_repo_service;
 use liteconfig_core::services::skill_service;
 use liteconfig_core::settings::Settings;
 
@@ -149,6 +152,80 @@ pub struct MethodPopup {
     pub current: SyncMethod,
 }
 
+/// Preset chooser popup. Either offers curated skill-repo URLs or
+/// curated MCP servers — the user picks one with ↑/↓ and installs with
+/// Enter, or Esc closes without side effects.
+#[derive(Debug, Clone)]
+pub struct PresetsPopup {
+    pub kind: PresetsKind,
+    pub cursor: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresetsKind {
+    SkillRepo,
+    Mcp,
+}
+
+impl PresetsPopup {
+    pub fn len(&self) -> usize {
+        match self.kind {
+            PresetsKind::SkillRepo => SKILL_REPO_PRESETS.len(),
+            PresetsKind::Mcp => MCP_PRESETS.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// Keyboard focus within the skills.sh search popup. Tab cycles between the
+/// two zones; Enter's effect depends on which one owns focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchFocus {
+    Query,
+    Results,
+}
+
+/// Current state of the skills.sh search. Drives both the result list and
+/// the status line inside the popup.
+#[derive(Debug, Clone)]
+pub enum SearchStatus {
+    Idle,
+    Loading,
+    Error(String),
+    Loaded,
+}
+
+/// Worker thread hands the final result through here; UI thread drains on
+/// each tick. `None` = still in flight, `Some(Ok/Err)` = done.
+pub type SearchInbox = std::sync::Arc<std::sync::Mutex<Option<Result<Vec<ExternalSkill>, String>>>>;
+
+/// Live skills.sh search popup. The HTTP call runs on a worker thread that
+/// drops the result into `inbox`; the UI thread drains that on each tick.
+#[derive(Clone)]
+pub struct SearchSkillsPopup {
+    pub query: String,
+    pub results: Vec<ExternalSkill>,
+    pub cursor: usize,
+    pub status: SearchStatus,
+    pub focus: SearchFocus,
+    pub inbox: SearchInbox,
+}
+
+impl std::fmt::Debug for SearchSkillsPopup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SearchSkillsPopup")
+            .field("query", &self.query)
+            .field("results_len", &self.results.len())
+            .field("cursor", &self.cursor)
+            .field("status", &self.status)
+            .field("focus", &self.focus)
+            .finish()
+    }
+}
+
 /// View-level state for the MCP tab.
 #[derive(Debug, Clone, Default)]
 pub struct McpView {
@@ -164,7 +241,14 @@ pub struct McpView {
 pub struct BackupView {
     pub snapshots: Vec<Snapshot>,
     pub focused_idx: usize,
+    /// Two-phase delete: first `d` stamps this, second `d` within
+    /// [`DELETE_CONFIRM_WINDOW`] runs the actual delete. Cleared on any
+    /// non-`d` key and on successful delete.
+    pub delete_armed_at: Option<std::time::Instant>,
 }
+
+/// How long a pending delete stays armed after the first `d`.
+pub const DELETE_CONFIRM_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Focusable rows in the Settings tab. Order matches the render order —
 /// `move_settings_focus` walks this enum linearly.
@@ -250,6 +334,10 @@ pub struct App {
     pub agent_popup: Option<AgentPopup>,
     /// When `Some`, the Skills tab yields input to the sync-method picker.
     pub method_popup: Option<MethodPopup>,
+    /// When `Some`, a presets chooser (skill-repo or MCP) is open.
+    pub presets_popup: Option<PresetsPopup>,
+    /// When `Some`, the skills.sh search popup is open.
+    pub search_popup: Option<SearchSkillsPopup>,
 
     /// Ordered list of available theme slugs (builtin + user). Populated once
     /// on startup; used to cycle themes in the Settings tab.
@@ -266,6 +354,10 @@ pub struct App {
     pub show_activity: bool,
     /// Toggles the per-tab Help overlay (bound to `?`).
     pub show_help: bool,
+    /// Monotonic tick counter used to drive UI animation (spinner).
+    /// Wraps at 255 — callers should modulo by the frame count of their
+    /// animation.
+    pub tick_idx: u8,
 }
 
 impl App {
@@ -288,11 +380,14 @@ impl App {
             settings_view: SettingsView::default(),
             agent_popup: None,
             method_popup: None,
+            presets_popup: None,
+            search_popup: None,
             available_themes,
             toasts: Vec::new(),
             tasks: TaskRunner::new(),
             show_activity: false,
             show_help: false,
+            tick_idx: 0,
         };
         app.reload_profiles()?;
         app.reload_skills()?;
@@ -300,7 +395,38 @@ impl App {
         app.reload_rules()?;
         app.reload_backups();
         app.auto_import_if_empty();
+        app.rescan_live_skills_async();
         Ok(app)
+    }
+
+    /// Every launch, kick off a background scan of the user's live skills
+    /// directories. Picks up skills that were installed externally since
+    /// the last run (e.g. via `claude` CLI). Silent when nothing new turns
+    /// up so it doesn't nag on every cold start.
+    pub fn rescan_live_skills_async(&mut self) {
+        if let Some(path) = self.db.path().map(std::path::Path::to_path_buf) {
+            let settings = self.settings.clone();
+            self.tasks.submit("Rescan live skills", move || {
+                let db = Database::open(&path).map_err(|e| e.to_string())?;
+                let v = skill_service::scan_from_live(&db, &settings).map_err(|e| e.to_string())?;
+                if v.is_empty() {
+                    Ok(String::new())
+                } else {
+                    Ok(format!("{} new", v.len()))
+                }
+            });
+        } else {
+            // In-memory DB (tests): run inline.
+            if let Ok(v) = skill_service::scan_from_live(&self.db, &self.settings) {
+                if !v.is_empty() {
+                    self.push_toast(
+                        format!("Rescan: {} new skill(s)", v.len()),
+                        ToastLevel::Info,
+                    );
+                }
+                let _ = self.reload_skills();
+            }
+        }
     }
 
     /// On first launch (all tables empty), pull in whatever profiles / skills /
@@ -413,8 +539,10 @@ impl App {
     }
 
     pub fn tick(&mut self) {
+        self.tick_idx = self.tick_idx.wrapping_add(1);
         self.toasts.retain(|t| t.created_at.elapsed().as_secs() < 5);
         self.drain_completed_tasks();
+        self.drain_search_inbox();
     }
 
     /// Move any just-finished background tasks out of the runner: push a
@@ -423,20 +551,38 @@ impl App {
     fn drain_completed_tasks(&mut self) {
         let completed = self.tasks.drain_completed();
         for entry in completed {
-            let (level, msg) = match &entry.status {
-                TaskStatus::Ok(s) if s.is_empty() => (ToastLevel::Success, entry.name.clone()),
-                TaskStatus::Ok(s) => (ToastLevel::Success, format!("{}: {}", entry.name, s)),
-                TaskStatus::Err(e) => (ToastLevel::Error, format!("{} failed: {}", entry.name, e)),
-                TaskStatus::Running => continue, // drain_completed only returns finished
-            };
-            self.push_toast(msg, level);
             self.post_task_reload(&entry);
+            if let Some((level, msg)) = Self::toast_for_task(&entry) {
+                self.push_toast(msg, level);
+            }
+        }
+    }
+
+    /// Map a completed task to a toast. Returning `None` suppresses the
+    /// toast entirely — used for low-value background chores like the
+    /// startup rescan when nothing new was found.
+    fn toast_for_task(entry: &TaskLogEntry) -> Option<(ToastLevel, String)> {
+        match &entry.status {
+            TaskStatus::Ok(s) => {
+                if entry.name == "Rescan live skills" && s.is_empty() {
+                    return None;
+                }
+                if s.is_empty() {
+                    Some((ToastLevel::Success, entry.name.clone()))
+                } else {
+                    Some((ToastLevel::Success, format!("{}: {}", entry.name, s)))
+                }
+            }
+            TaskStatus::Err(e) => {
+                Some((ToastLevel::Error, format!("{} failed: {}", entry.name, e)))
+            }
+            TaskStatus::Running => None,
         }
     }
 
     fn post_task_reload(&mut self, entry: &TaskLogEntry) {
         match entry.name.as_str() {
-            "Sync all skills" => {
+            "Sync all skills" | "Rescan live skills" => {
                 let _ = self.reload_skills();
             }
             "Sync all MCP" => {
@@ -708,6 +854,283 @@ impl App {
         match skill_service::sync_many(&self.db, &self.settings, &ids) {
             Ok(()) => self.push_toast(format!("Synced {count} skills"), ToastLevel::Success),
             Err(e) => self.push_toast(format!("Sync failed: {e}"), ToastLevel::Error),
+        }
+    }
+
+    /// Open the curated skill-repo presets chooser.
+    pub fn open_new_skill_menu(&mut self) {
+        self.presets_popup = Some(PresetsPopup {
+            kind: PresetsKind::SkillRepo,
+            cursor: 0,
+        });
+    }
+
+    /// Open the curated MCP-server presets chooser.
+    pub fn open_new_mcp_menu(&mut self) {
+        self.presets_popup = Some(PresetsPopup {
+            kind: PresetsKind::Mcp,
+            cursor: 0,
+        });
+    }
+
+    pub fn presets_popup_move(&mut self, delta: i32) {
+        let Some(p) = self.presets_popup.as_mut() else {
+            return;
+        };
+        let n = p.len() as i32;
+        if n == 0 {
+            return;
+        }
+        p.cursor = (((p.cursor as i32 + delta) % n + n) % n) as usize;
+    }
+
+    pub fn presets_popup_cancel(&mut self) {
+        self.presets_popup = None;
+    }
+
+    pub fn presets_popup_commit(&mut self) {
+        let Some(p) = self.presets_popup.take() else {
+            return;
+        };
+        match p.kind {
+            PresetsKind::SkillRepo => self.install_skill_repo_preset(p.cursor),
+            PresetsKind::Mcp => self.install_mcp_preset(p.cursor),
+        }
+    }
+
+    /// Register a curated skill-repo and kick off its clone+scan in the
+    /// background. The registration itself is synchronous (just a DB write);
+    /// the heavy network fetch runs through the TaskRunner so the UI stays
+    /// responsive for large repos like `anthropics/skills`.
+    pub fn install_skill_repo_preset(&mut self, idx: usize) {
+        let Some(preset) = SKILL_REPO_PRESETS.get(idx).copied() else {
+            return;
+        };
+        let arg = preset.add_arg();
+        let repo = match skill_repo_service::add(&self.db, &arg) {
+            Ok(r) => r,
+            Err(e) => {
+                self.push_toast(format!("Add failed: {e}"), ToastLevel::Error);
+                return;
+            }
+        };
+
+        let label = preset.display_name();
+        let task_name = format!("Clone {label}");
+        if let Some(path) = self.db.path().map(std::path::Path::to_path_buf) {
+            let repo_id = repo.id.clone();
+            self.tasks.submit(task_name, move || {
+                let db = Database::open(&path).map_err(|e| e.to_string())?;
+                let r = skill_repo_service::sync(&db, &repo_id).map_err(|e| e.to_string())?;
+                Ok(format!("{} skill(s)", r.skill_count))
+            });
+            self.push_toast(
+                format!("Added {label} — cloning in background…"),
+                ToastLevel::Info,
+            );
+        } else {
+            // In-memory DB: run inline so tests see the repo synced.
+            match skill_repo_service::sync(&self.db, &repo.id) {
+                Ok(r) => {
+                    let _ = self.reload_skills();
+                    self.push_toast(
+                        format!("Added {label} — {} skill(s)", r.skill_count),
+                        ToastLevel::Success,
+                    );
+                }
+                Err(e) => self.push_toast(format!("Clone failed: {e}"), ToastLevel::Error),
+            }
+        }
+    }
+
+    /// Upsert a curated MCP server row with the cross-platform resolved
+    /// command/args. Stays disabled for every agent — user flips enablement
+    /// per-agent via the `a` popup, matching cc-switch's behaviour.
+    pub fn install_mcp_preset(&mut self, idx: usize) {
+        let Some(preset) = MCP_PRESETS.get(idx).copied() else {
+            return;
+        };
+        let (command, args) = preset.resolved();
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut enabled = BTreeMap::new();
+        for agent in ALL_AGENT_KINDS {
+            enabled.insert(*agent, false);
+        }
+        let server = McpServer {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: preset.name.to_string(),
+            config: serde_json::json!({
+                "command": command,
+                "args": args,
+                "homepage": preset.homepage,
+                "description": preset.description,
+            }),
+            enabled,
+            created_at: now,
+            updated_at: now,
+        };
+        match mcp_service::upsert(&self.db, server) {
+            Ok(s) => {
+                let _ = self.reload_mcp();
+                self.push_toast(
+                    format!(
+                        "Added MCP preset \"{}\" (disabled — enable per agent via a)",
+                        s.name
+                    ),
+                    ToastLevel::Success,
+                );
+            }
+            Err(e) => self.push_toast(format!("Add failed: {e}"), ToastLevel::Error),
+        }
+    }
+
+    // ---------- skills.sh search popup ----------
+
+    pub fn open_search_skills(&mut self) {
+        self.search_popup = Some(SearchSkillsPopup {
+            query: String::new(),
+            results: Vec::new(),
+            cursor: 0,
+            status: SearchStatus::Idle,
+            focus: SearchFocus::Query,
+            inbox: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        });
+    }
+
+    pub fn search_popup_cancel(&mut self) {
+        self.search_popup = None;
+    }
+
+    pub fn search_popup_push(&mut self, c: char) {
+        if let Some(p) = self.search_popup.as_mut() {
+            p.query.push(c);
+            p.focus = SearchFocus::Query;
+        }
+    }
+
+    pub fn search_popup_pop(&mut self) {
+        if let Some(p) = self.search_popup.as_mut() {
+            p.query.pop();
+            p.focus = SearchFocus::Query;
+        }
+    }
+
+    pub fn search_popup_toggle_focus(&mut self) {
+        if let Some(p) = self.search_popup.as_mut() {
+            p.focus = match p.focus {
+                SearchFocus::Query => SearchFocus::Results,
+                SearchFocus::Results => SearchFocus::Query,
+            };
+        }
+    }
+
+    pub fn search_popup_move(&mut self, delta: i32) {
+        let Some(p) = self.search_popup.as_mut() else {
+            return;
+        };
+        let n = p.results.len() as i32;
+        if n == 0 {
+            return;
+        }
+        p.cursor = (((p.cursor as i32 + delta) % n + n) % n) as usize;
+    }
+
+    /// Enter's meaning depends on focus: typing in the query zone runs the
+    /// search; highlighting a hit in the result list installs it.
+    pub fn search_popup_enter(&mut self) {
+        let Some(p) = self.search_popup.as_ref() else {
+            return;
+        };
+        match p.focus {
+            SearchFocus::Query => self.run_skills_search(),
+            SearchFocus::Results => self.install_focused_search_result(),
+        }
+    }
+
+    fn run_skills_search(&mut self) {
+        let Some(p) = self.search_popup.as_mut() else {
+            return;
+        };
+        let query = p.query.trim().to_string();
+        if query.is_empty() {
+            p.status = SearchStatus::Error("type a query first".into());
+            return;
+        }
+        p.status = SearchStatus::Loading;
+        p.results.clear();
+        p.cursor = 0;
+        let inbox = p.inbox.clone();
+        std::thread::spawn(move || {
+            let result = skill_index_service::search(&query, 20, 0).map_err(|e| e.to_string());
+            if let Ok(mut slot) = inbox.lock() {
+                *slot = Some(result);
+            }
+        });
+    }
+
+    /// Drains the inbox from any pending skills.sh search completion.
+    /// Called once per tick from [`Self::tick`] so results flow in without
+    /// the user having to press a key.
+    pub fn drain_search_inbox(&mut self) {
+        let Some(p) = self.search_popup.as_mut() else {
+            return;
+        };
+        let delivered = { p.inbox.lock().ok().and_then(|mut s| s.take()) };
+        let Some(outcome) = delivered else {
+            return;
+        };
+        match outcome {
+            Ok(hits) => {
+                p.results = hits;
+                p.cursor = 0;
+                p.status = SearchStatus::Loaded;
+                p.focus = SearchFocus::Results;
+            }
+            Err(e) => {
+                p.status = SearchStatus::Error(e);
+            }
+        }
+    }
+
+    fn install_focused_search_result(&mut self) {
+        let Some(p) = self.search_popup.as_ref() else {
+            return;
+        };
+        let Some(hit) = p.results.get(p.cursor).cloned() else {
+            return;
+        };
+        self.search_popup = None;
+        let arg = hit.add_arg();
+        let label = hit.name.clone();
+        let repo = match skill_repo_service::add(&self.db, &arg) {
+            Ok(r) => r,
+            Err(e) => {
+                self.push_toast(format!("Add failed: {e}"), ToastLevel::Error);
+                return;
+            }
+        };
+        if let Some(path) = self.db.path().map(std::path::Path::to_path_buf) {
+            let repo_id = repo.id.clone();
+            self.tasks.submit(format!("Clone {label}"), move || {
+                let db = Database::open(&path).map_err(|e| e.to_string())?;
+                let r = skill_repo_service::sync(&db, &repo_id).map_err(|e| e.to_string())?;
+                Ok(format!("{} skill(s)", r.skill_count))
+            });
+            self.push_toast(
+                format!("Adding {label} — cloning in background…"),
+                ToastLevel::Info,
+            );
+        } else {
+            match skill_repo_service::sync(&self.db, &repo.id) {
+                Ok(r) => {
+                    let _ = self.reload_skills();
+                    self.push_toast(
+                        format!("Added {label} — {} skill(s)", r.skill_count),
+                        ToastLevel::Success,
+                    );
+                }
+                Err(e) => self.push_toast(format!("Clone failed: {e}"), ToastLevel::Error),
+            }
         }
     }
 
@@ -1203,10 +1626,55 @@ impl App {
         let snapshots = backup_service::list_snapshots().unwrap_or_default();
         let max_idx = snapshots.len().saturating_sub(1);
         let focused = self.backup_view.focused_idx.min(max_idx);
+        let prev_armed = self.backup_view.delete_armed_at;
         self.backup_view = BackupView {
             snapshots,
             focused_idx: focused,
+            delete_armed_at: prev_armed,
         };
+    }
+
+    /// Two-phase delete of the focused snapshot. First call arms the
+    /// delete + shows a "press d again" toast; second call within
+    /// [`DELETE_CONFIRM_WINDOW`] runs the delete. Pressing any other key
+    /// clears the arm (see `clear_backup_delete_arm`).
+    pub fn delete_focused_snapshot(&mut self) {
+        let Some(snap) = self
+            .backup_view
+            .snapshots
+            .get(self.backup_view.focused_idx)
+            .cloned()
+        else {
+            self.push_toast("No snapshot to delete", ToastLevel::Warning);
+            return;
+        };
+        let now = std::time::Instant::now();
+        let armed = self
+            .backup_view
+            .delete_armed_at
+            .map(|t| now.duration_since(t) <= DELETE_CONFIRM_WINDOW)
+            .unwrap_or(false);
+        if !armed {
+            self.backup_view.delete_armed_at = Some(now);
+            self.push_toast(
+                format!("Press d again to delete snapshot {}", snap.timestamp),
+                ToastLevel::Warning,
+            );
+            return;
+        }
+        self.backup_view.delete_armed_at = None;
+        let ts = snap.timestamp.clone();
+        match backup_service::delete_snapshot(&ts) {
+            Ok(()) => {
+                self.reload_backups();
+                self.push_toast(format!("Deleted snapshot {ts}"), ToastLevel::Success);
+            }
+            Err(e) => self.push_toast(format!("Delete failed: {e}"), ToastLevel::Error),
+        }
+    }
+
+    pub fn clear_backup_delete_arm(&mut self) {
+        self.backup_view.delete_armed_at = None;
     }
 
     pub fn move_backup_focus(&mut self, delta: i32) {
