@@ -1,0 +1,19 @@
+{
+  "name": "Vesper",
+  "author": "raunofreiberg",
+  "surface":      [14,  14,  14],
+  "surface_alt":  [28,  28,  28],
+  "primary":      [251, 193, 157],
+  "secondary":    [255, 215, 135],
+  "accent":       [229, 192, 123],
+  "muted":        [102, 102, 102],
+  "border":       [42,  42,  42],
+  "border_focus": [251, 193, 157],
+  "text":         [240, 236, 227],
+  "text_dim":     [160, 155, 145],
+  "success":      [152, 195, 121],
+  "warning":      [229, 192, 123],
+  "danger":       [224, 108, 117],
+  "selection_bg": [42,  42,  42],
+  "selection_fg": [251, 193, 157]
+}

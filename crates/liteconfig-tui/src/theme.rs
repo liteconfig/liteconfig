@@ -104,6 +104,7 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
         "catppuccin-latte",
         include_str!("../../../themes/catppuccin-latte.json"),
     ),
+    ("vesper", include_str!("../../../themes/vesper.json")),
 ];
 
 impl Theme {
