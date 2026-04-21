@@ -39,6 +39,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .constraints([
             Constraint::Length(1), // toolbar (buttons)
             Constraint::Length(1), // legend
+            Constraint::Length(1), // filter bar
             Constraint::Length(1), // column header
             Constraint::Min(1),    // list
             Constraint::Length(1), // summary footer
@@ -47,9 +48,10 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
 
     render_toolbar(frame, app, layout[0]);
     render_legend(frame, app, layout[1]);
-    render_header(frame, app, layout[2]);
-    render_list(frame, app, layout[3]);
-    render_summary(frame, app, layout[4]);
+    render_filter(frame, app, layout[2]);
+    render_header(frame, app, layout[3]);
+    render_list(frame, app, layout[4]);
+    render_summary(frame, app, layout[5]);
 
     // If the agent popup is open, overlay it.
     if app.agent_popup.is_some() {
@@ -87,9 +89,9 @@ fn button(label: &str, color: ratatui::style::Color, theme: crate::theme::Theme)
 fn render_legend(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let theme = app.theme;
     let mut spans: Vec<Span<'_>> = vec![
-        Span::styled("Legend — agents: ", Style::default().fg(theme.muted)),
-        Span::styled("● on  ", Style::default().fg(theme.success)),
-        Span::styled("○ off    ", Style::default().fg(theme.muted)),
+        Span::styled("Agents: ", Style::default().fg(theme.muted)),
+        Span::styled("● on ", Style::default().fg(theme.success)),
+        Span::styled("○ off ", Style::default().fg(theme.muted)),
     ];
     for agent in ALL_AGENT_KINDS {
         spans.push(Span::styled(
@@ -97,9 +99,35 @@ fn render_legend(frame: &mut Frame<'_>, app: &App, area: Rect) {
             Style::default().fg(theme.text),
         ));
     }
+    spans.push(Span::styled(" · ", Style::default().fg(theme.muted)));
+    spans.push(Span::styled(
+        "Method: inherit=workspace default, symlink, copy, auto=OS-picked",
+        Style::default().fg(theme.muted),
+    ));
+    spans.push(Span::styled(" · ", Style::default().fg(theme.muted)));
+    spans.push(Span::styled(
+        "Source: local/github",
+        Style::default().fg(theme.muted),
+    ));
+    spans.push(Span::styled(" · ", Style::default().fg(theme.muted)));
+    spans.push(Span::styled(
+        "Status: in sync/unknown  (press ?)",
+        Style::default().fg(theme.muted),
+    ));
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(theme.default_style()),
         area,
+    );
+}
+
+fn render_filter(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    crate::ui::widgets::filter_bar::render(
+        frame,
+        app.theme,
+        area,
+        &app.skills_view.filter,
+        app.skills_view.filter_editing,
+        " Press / to filter by name or description",
     );
 }
 
@@ -120,6 +148,7 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let theme = app.theme;
     let view = &app.skills_view;
+    let filtered = app.filtered_skill_indices();
 
     if view.skills.is_empty() {
         let p = Paragraph::new(Span::styled(
@@ -135,9 +164,23 @@ fn render_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem<'_>> = view
-        .skills
+    if filtered.is_empty() {
+        let p = Paragraph::new(Span::styled(
+            format!("(no matches for \"{}\" — Esc to clear)", view.filter),
+            Style::default().fg(theme.muted),
+        ))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.border_style(false)),
+        );
+        frame.render_widget(p, area);
+        return;
+    }
+
+    let items: Vec<ListItem<'_>> = filtered
         .iter()
+        .filter_map(|i| view.skills.get(*i))
         .map(|s| {
             let selected = view.selected_ids.contains(&s.id);
             let checkbox = if selected { "☑ " } else { "☐ " };
@@ -211,8 +254,8 @@ fn render_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .highlight_symbol("▶ ");
 
     let mut state = ListState::default();
-    if !view.skills.is_empty() {
-        state.select(Some(view.focused_idx.min(view.skills.len() - 1)));
+    if !filtered.is_empty() {
+        state.select(Some(view.focused_idx.min(filtered.len() - 1)));
     }
     frame.render_stateful_widget(list, area, &mut state);
 }
@@ -220,11 +263,12 @@ fn render_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_summary(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let theme = app.theme;
     let view = &app.skills_view;
+    let shown = app.filtered_skill_indices().len();
     let line = Line::from(vec![Span::styled(
         format!(
             "  Selected: {} · Showing {} of {}    Method (focused): {}",
             view.selected_ids.len(),
-            view.skills.len(),
+            shown,
             view.skills.len(),
             app.focused_sync_method_label()
         ),

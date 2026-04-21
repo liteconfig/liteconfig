@@ -12,13 +12,18 @@ use crate::model::mcp::McpServer;
 use crate::model::profile::{Profile, ProfileMeta};
 use crate::model::rule::Rule;
 use crate::model::skill::{Skill, SkillSource, StorageMode, SyncMethod};
+use crate::model::skill_repo::SkillRepo;
 use crate::paths::{ensure_dir, liteconfig_db_path, liteconfig_dir};
 use crate::{Error, Result};
 
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 pub struct Database {
     conn: Connection,
+    /// The on-disk location this DB was opened from, if any. `None` for
+    /// in-memory handles. Exposed so background workers can reopen an
+    /// independent connection to the same data without sharing this handle.
+    path: Option<PathBuf>,
 }
 
 impl Database {
@@ -37,16 +42,25 @@ impl Database {
         let conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        let mut db = Database { conn };
+        let mut db = Database {
+            conn,
+            path: Some(path.to_path_buf()),
+        };
         db.migrate()?;
         Ok(db)
     }
 
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        let mut db = Database { conn };
+        let mut db = Database { conn, path: None };
         db.migrate()?;
         Ok(db)
+    }
+
+    /// Where this handle was opened from. `None` for in-memory. Background
+    /// workers use this to open their own independent connection.
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     fn migrate(&mut self) -> Result<()> {
@@ -78,6 +92,9 @@ impl Database {
 
         if current < 1 {
             self.conn.execute_batch(MIGRATION_V1)?;
+        }
+        if current < 2 {
+            self.conn.execute_batch(MIGRATION_V2)?;
         }
 
         self.conn.execute(
@@ -316,6 +333,63 @@ impl Database {
         Ok(())
     }
 
+    // ---------- skill repos ----------
+
+    pub fn list_skill_repos(&self) -> Result<Vec<SkillRepo>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, owner, repo, branch, url, last_synced_at, skill_count
+             FROM skill_repos ORDER BY name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], row_to_skill_repo)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn get_skill_repo(&self, id: &str) -> Result<Option<SkillRepo>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, owner, repo, branch, url, last_synced_at, skill_count
+             FROM skill_repos WHERE id = ?1",
+        )?;
+        stmt.query_row(params![id], row_to_skill_repo)
+            .optional()
+            .map_err(Error::from)
+    }
+
+    pub fn upsert_skill_repo(&self, repo: &SkillRepo) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO skill_repos (id, name, owner, repo, branch, url, last_synced_at, skill_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                 name = excluded.name,
+                 owner = excluded.owner,
+                 repo = excluded.repo,
+                 branch = excluded.branch,
+                 url = excluded.url,
+                 last_synced_at = excluded.last_synced_at,
+                 skill_count = excluded.skill_count",
+            params![
+                repo.id,
+                repo.name,
+                repo.owner,
+                repo.repo,
+                repo.branch,
+                repo.url,
+                repo.last_synced_at,
+                repo.skill_count,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_skill_repo(&self, id: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM skill_repos WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     // ---------- common config ----------
 
     pub fn get_common_config(&self, agent: AgentKind) -> Result<Option<serde_json::Value>> {
@@ -410,6 +484,19 @@ CREATE TABLE IF NOT EXISTS common_config (
     agent        TEXT PRIMARY KEY,
     config_json  TEXT NOT NULL,
     enabled      INTEGER NOT NULL DEFAULT 1
+);
+"#;
+
+const MIGRATION_V2: &str = r#"
+CREATE TABLE IF NOT EXISTS skill_repos (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    owner           TEXT,
+    repo            TEXT NOT NULL,
+    branch          TEXT NOT NULL,
+    url             TEXT NOT NULL,
+    last_synced_at  INTEGER,
+    skill_count     INTEGER NOT NULL DEFAULT 0
 );
 "#;
 
@@ -541,6 +628,19 @@ fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<Rule> {
         enabled,
         created_at,
         updated_at,
+    })
+}
+
+fn row_to_skill_repo(row: &rusqlite::Row<'_>) -> rusqlite::Result<SkillRepo> {
+    Ok(SkillRepo {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        owner: row.get(2)?,
+        repo: row.get(3)?,
+        branch: row.get(4)?,
+        url: row.get(5)?,
+        last_synced_at: row.get(6)?,
+        skill_count: row.get::<_, i64>(7)? as u32,
     })
 }
 

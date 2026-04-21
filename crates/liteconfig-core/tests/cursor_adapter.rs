@@ -49,7 +49,9 @@ fn cursor_mcp_write_then_read_roundtrip() {
         updated_at: now,
     };
 
-    adapter.write_mcp(&settings, &[server.clone()]).unwrap();
+    adapter
+        .write_mcp(&settings, std::slice::from_ref(&server))
+        .unwrap();
 
     let path = liteconfig_core::paths::cursor_mcp_path(&settings).unwrap();
     assert!(path.exists());

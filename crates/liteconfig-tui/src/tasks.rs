@@ -74,7 +74,13 @@ impl TaskRunner {
                 };
                 // If the UI thread is gone we just stop; no error handling
                 // makes sense at that point.
-                if result_tx.send(TaskResult { id, status: outcome }).is_err() {
+                if result_tx
+                    .send(TaskResult {
+                        id,
+                        status: outcome,
+                    })
+                    .is_err()
+                {
                     break;
                 }
             }

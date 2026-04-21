@@ -76,7 +76,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .highlight_symbol("▶ ");
     let mut state = ListState::default();
     state.select(Some(
-        popup.cursor.min(METHOD_POPUP_CHOICES.len().saturating_sub(1)),
+        popup
+            .cursor
+            .min(METHOD_POPUP_CHOICES.len().saturating_sub(1)),
     ));
     frame.render_stateful_widget(list, list_area, &mut state);
 

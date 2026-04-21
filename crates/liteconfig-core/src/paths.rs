@@ -33,6 +33,12 @@ pub fn liteconfig_backups_dir() -> Result<PathBuf> {
     Ok(liteconfig_dir()?.join("backups"))
 }
 
+/// Root for external skill-repo clones. Each repo lands in
+/// `~/.liteconfig/repos/<repo-id>/`.
+pub fn liteconfig_repos_dir() -> Result<PathBuf> {
+    Ok(liteconfig_dir()?.join("repos"))
+}
+
 /// Working directory for the GitHub backup repo. We keep one long-lived clone
 /// here so pushes are incremental instead of full uploads each time.
 pub fn liteconfig_backup_repo_dir() -> Result<PathBuf> {

@@ -23,6 +23,23 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     if app.method_popup.is_some() {
         return handle_method_popup_key(app, key);
     }
+    if app.show_activity {
+        if matches!(
+            (key.code, key.modifiers),
+            (KeyCode::Char('L') | KeyCode::Char('l') | KeyCode::Esc, _)
+        ) {
+            app.toggle_activity();
+            return true;
+        }
+        // Swallow other keys while the overlay is up so tab switches etc.
+        // don't quietly happen behind the panel.
+        return true;
+    }
+    if app.show_help {
+        // Any keypress closes help so the user is never trapped in it.
+        app.show_help = false;
+        return true;
+    }
 
     // Global bindings (work on every tab).
     match (key.code, key.modifiers) {
@@ -37,6 +54,14 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         }
         (KeyCode::BackTab, _) | (KeyCode::Left, KeyModifiers::CONTROL) => {
             app.prev_tab();
+            return true;
+        }
+        (KeyCode::Char('L'), KeyModifiers::SHIFT) | (KeyCode::Char('L'), KeyModifiers::NONE) => {
+            app.toggle_activity();
+            return true;
+        }
+        (KeyCode::Char('?'), _) => {
+            app.toggle_help();
             return true;
         }
         (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) => {
@@ -62,9 +87,48 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
 }
 
 fn handle_settings_key(app: &mut App, key: KeyEvent) -> bool {
+    // Text-input mode has priority — swallow typing + editing keys.
+    if app.settings_view.input_buf.is_some() {
+        match (key.code, key.modifiers) {
+            (KeyCode::Esc, _) => {
+                app.settings_input_cancel();
+                return true;
+            }
+            (KeyCode::Enter, _) => {
+                app.settings_input_commit();
+                return true;
+            }
+            (KeyCode::Backspace, _) => {
+                app.settings_input_pop();
+                return true;
+            }
+            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                app.settings_input_push(c);
+                return true;
+            }
+            _ => return false,
+        }
+    }
+
     match (key.code, key.modifiers) {
         (KeyCode::Char('t'), KeyModifiers::NONE) => {
             app.cycle_theme();
+            true
+        }
+        (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
+            app.move_settings_focus(-1);
+            true
+        }
+        (KeyCode::Down | KeyCode::Char('j'), KeyModifiers::NONE) => {
+            app.move_settings_focus(1);
+            true
+        }
+        (KeyCode::Char(' '), KeyModifiers::NONE) => {
+            app.settings_toggle_focused();
+            true
+        }
+        (KeyCode::Enter, _) => {
+            app.settings_begin_edit();
             true
         }
         _ => false,
@@ -98,7 +162,33 @@ fn handle_backup_key(app: &mut App, key: KeyEvent) -> bool {
 }
 
 fn handle_rules_key(app: &mut App, key: KeyEvent) -> bool {
+    if app.rules_view.filter_editing {
+        match (key.code, key.modifiers) {
+            (KeyCode::Esc, _) => {
+                app.rules_filter_clear();
+                return true;
+            }
+            (KeyCode::Enter, _) => {
+                app.rules_filter_close_keep();
+                return true;
+            }
+            (KeyCode::Backspace, _) => {
+                app.rules_filter_pop();
+                return true;
+            }
+            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                app.rules_filter_push(c);
+                return true;
+            }
+            _ => return false,
+        }
+    }
+
     match (key.code, key.modifiers) {
+        (KeyCode::Char('/'), KeyModifiers::NONE) => {
+            app.rules_filter_open();
+            true
+        }
         (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
             app.move_rules_focus(-1);
             true
@@ -132,7 +222,33 @@ fn handle_rules_key(app: &mut App, key: KeyEvent) -> bool {
 }
 
 fn handle_mcp_key(app: &mut App, key: KeyEvent) -> bool {
+    if app.mcp_view.filter_editing {
+        match (key.code, key.modifiers) {
+            (KeyCode::Esc, _) => {
+                app.mcp_filter_clear();
+                return true;
+            }
+            (KeyCode::Enter, _) => {
+                app.mcp_filter_close_keep();
+                return true;
+            }
+            (KeyCode::Backspace, _) => {
+                app.mcp_filter_pop();
+                return true;
+            }
+            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                app.mcp_filter_push(c);
+                return true;
+            }
+            _ => return false,
+        }
+    }
+
     match (key.code, key.modifiers) {
+        (KeyCode::Char('/'), KeyModifiers::NONE) => {
+            app.mcp_filter_open();
+            true
+        }
         (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
             app.move_mcp_focus(-1);
             true
@@ -196,7 +312,35 @@ fn handle_profiles_key(app: &mut App, key: KeyEvent) -> bool {
 }
 
 fn handle_skills_key(app: &mut App, key: KeyEvent) -> bool {
+    // Filter input mode: absorb typed chars and editing keys before the
+    // normal per-tab keymap sees them.
+    if app.skills_view.filter_editing {
+        match (key.code, key.modifiers) {
+            (KeyCode::Esc, _) => {
+                app.skills_filter_clear();
+                return true;
+            }
+            (KeyCode::Enter, _) => {
+                app.skills_filter_close_keep();
+                return true;
+            }
+            (KeyCode::Backspace, _) => {
+                app.skills_filter_pop();
+                return true;
+            }
+            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                app.skills_filter_push(c);
+                return true;
+            }
+            _ => return false,
+        }
+    }
+
     match (key.code, key.modifiers) {
+        (KeyCode::Char('/'), KeyModifiers::NONE) => {
+            app.skills_filter_open();
+            true
+        }
         (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
             app.move_skill_focus(-1);
             true

@@ -16,12 +16,21 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     } else {
         "GH: off".to_string()
     };
-    let line = Line::from(vec![
+    let running = app.tasks.running_count();
+    let mut spans = vec![
         Span::styled(" ", Style::default()),
         Span::styled(app.live_config_hint(), Style::default().fg(theme.text_dim)),
         Span::raw("   "),
         Span::styled(gh, Style::default().fg(theme.muted)),
-    ]);
+    ];
+    if running > 0 {
+        spans.push(Span::raw("   "));
+        spans.push(Span::styled(
+            format!("⟳ {running} running (L)"),
+            Style::default().fg(theme.accent),
+        ));
+    }
+    let line = Line::from(spans);
     let p = Paragraph::new(line).style(theme.default_style());
     frame.render_widget(p, area);
 }

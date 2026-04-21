@@ -32,19 +32,28 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
+            Constraint::Length(1), // toolbar
+            Constraint::Length(1), // legend
+            Constraint::Length(1), // filter bar
+            Constraint::Length(1), // header
+            Constraint::Min(1),    // list
+            Constraint::Length(1), // summary
         ])
         .split(inner);
 
     render_toolbar(frame, app, layout[0]);
     render_legend(frame, app, layout[1]);
-    render_header(frame, app, layout[2]);
-    render_list(frame, app, layout[3]);
-    render_summary(frame, app, layout[4]);
+    crate::ui::widgets::filter_bar::render(
+        frame,
+        app.theme,
+        layout[2],
+        &app.rules_view.filter,
+        app.rules_view.filter_editing,
+        " Press / to filter by name or body",
+    );
+    render_header(frame, app, layout[3]);
+    render_list(frame, app, layout[4]);
+    render_summary(frame, app, layout[5]);
 
     if app.agent_popup.is_some() {
         crate::ui::widgets::agent_popup::render(frame, app, area);
@@ -104,6 +113,7 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let theme = app.theme;
     let view = &app.rules_view;
+    let filtered = app.filtered_rules_indices();
 
     if view.rules.is_empty() {
         let p = Paragraph::new(Span::styled(
@@ -119,9 +129,23 @@ fn render_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem<'_>> = view
-        .rules
+    if filtered.is_empty() {
+        let p = Paragraph::new(Span::styled(
+            format!("(no matches for \"{}\" — Esc to clear)", view.filter),
+            Style::default().fg(theme.muted),
+        ))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.border_style(false)),
+        );
+        frame.render_widget(p, area);
+        return;
+    }
+
+    let items: Vec<ListItem<'_>> = filtered
         .iter()
+        .filter_map(|i| view.rules.get(*i))
         .map(|r| {
             let selected = view.selected_ids.contains(&r.id);
             let checkbox = if selected { "☑ " } else { "☐ " };
@@ -179,18 +203,19 @@ fn render_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .highlight_symbol("▶ ");
 
     let mut state = ListState::default();
-    state.select(Some(view.focused_idx.min(view.rules.len() - 1)));
+    state.select(Some(view.focused_idx.min(filtered.len() - 1)));
     frame.render_stateful_widget(list, area, &mut state);
 }
 
 fn render_summary(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let theme = app.theme;
     let view = &app.rules_view;
+    let shown = app.filtered_rules_indices().len();
     let line = Line::from(vec![Span::styled(
         format!(
             "  Selected: {} · Showing {} of {}",
             view.selected_ids.len(),
-            view.rules.len(),
+            shown,
             view.rules.len()
         ),
         Style::default().fg(theme.muted),

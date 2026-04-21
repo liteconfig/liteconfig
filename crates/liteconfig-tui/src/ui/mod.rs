@@ -42,6 +42,8 @@ pub fn render(frame: &mut Frame<'_>, app: &App) -> FrameOutput {
     render_body(frame, app, layout[1]);
     render_hint_bar(frame, app, layout[2]);
     status_bar::render(frame, app, layout[3]);
+    widgets::activity_panel::render(frame, app, area);
+    widgets::help_overlay::render(frame, app, area);
     widgets::toast::render(frame, app, area);
 
     FrameOutput { tab_hits }
@@ -194,8 +196,11 @@ fn render_hint_bar(frame: &mut Frame<'_>, app: &App, area: Rect) {
             hint("p", "push GH"),
         ],
         Tab::Settings => vec![
-            hint("t", "cycle theme"),
-            hint("Tab", "next tab"),
+            hint("↑↓", "focus row"),
+            hint("Space", "toggle"),
+            hint("Enter", "edit"),
+            hint("t", "theme"),
+            hint("?", "help"),
             hint(&key_label(KeyAction::Quit), "quit"),
         ],
         _ => vec![
