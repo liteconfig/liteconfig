@@ -1,0 +1,19 @@
+{
+  "name": "Slater",
+  "author": "liteconfig",
+  "surface":      [43,  48,  58],
+  "surface_alt":  [55,  61,  72],
+  "primary":      [146, 220, 229],
+  "secondary":    [214, 73,  51],
+  "accent":       [255, 170, 120],
+  "muted":        [124, 124, 124],
+  "border":       [55,  61,  72],
+  "border_focus": [146, 220, 229],
+  "text":         [238, 229, 233],
+  "text_dim":     [160, 155, 160],
+  "success":      [130, 210, 160],
+  "warning":      [255, 200, 120],
+  "danger":       [214, 73,  51],
+  "selection_bg": [60,  70,  85],
+  "selection_fg": [255, 255, 255]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "Abyss",
+  "author": "liteconfig",
+  "surface":      [2,   48,  71],
+  "surface_alt":  [8,   64,  95],
+  "primary":      [251, 133, 0],
+  "secondary":    [255, 183, 3],
+  "accent":       [255, 183, 3],
+  "muted":        [80,  130, 150],
+  "border":       [15,  60,  85],
+  "border_focus": [251, 133, 0],
+  "text":         [142, 202, 230],
+  "text_dim":     [100, 160, 180],
+  "success":      [130, 210, 160],
+  "warning":      [255, 183, 3],
+  "danger":       [255, 100, 100],
+  "selection_bg": [15,  60,  85],
+  "selection_fg": [255, 255, 255]
+}
