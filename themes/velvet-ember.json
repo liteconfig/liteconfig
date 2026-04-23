@@ -1,0 +1,19 @@
+{
+  "name": "Velvet Ember",
+  "author": "liteconfig",
+  "surface":      [22,  16,  22],
+  "surface_alt":  [38,  26,  36],
+  "primary":      [220, 90,  120],
+  "secondary":    [170, 70,  130],
+  "accent":       [247, 55,  79],
+  "muted":        [125, 100, 115],
+  "border":       [55,  40,  52],
+  "border_focus": [220, 90,  120],
+  "text":         [235, 228, 232],
+  "text_dim":     [158, 142, 150],
+  "success":      [130, 210, 160],
+  "warning":      [255, 190, 110],
+  "danger":       [247, 55,  79],
+  "selection_bg": [82,  37,  70],
+  "selection_fg": [255, 255, 255]
+}

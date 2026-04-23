@@ -1,0 +1,19 @@
+{
+  "name": "Noir Berry",
+  "author": "liteconfig",
+  "surface":      [18,  16,  20],
+  "surface_alt":  [32,  26,  32],
+  "primary":      [247, 55,  79],
+  "secondary":    [136, 48,  78],
+  "accent":       [255, 170, 120],
+  "muted":        [115, 100, 108],
+  "border":       [50,  40,  48],
+  "border_focus": [247, 55,  79],
+  "text":         [236, 230, 232],
+  "text_dim":     [160, 148, 152],
+  "success":      [125, 205, 155],
+  "warning":      [255, 195, 115],
+  "danger":       [247, 55,  79],
+  "selection_bg": [82,  37,  70],
+  "selection_fg": [255, 255, 255]
+}
