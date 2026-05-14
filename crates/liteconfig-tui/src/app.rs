@@ -279,20 +279,20 @@ impl std::fmt::Debug for SearchSkillsPopup {
 }
 
 /// Popup that tails installer output. Wraps `CommandStream` so the same
-/// popup can drive either `pnpx skills add <owner/repo>` or a nested
-/// pnpm-bootstrap step.
+/// popup can drive either `pnpx skills add <owner/repo>` or a Corepack pnpm
+/// activation step.
 #[derive(Clone)]
 pub struct InstallLogPopup {
     pub mode: InstallLogMode,
     /// `owner/repo` the user wanted to install. Carried through so when the
-    /// pnpm-installer finishes we can automatically kick off the skill
+    /// pnpm activation finishes we can automatically kick off the skill
     /// install.
     pub pending_skill: Option<String>,
 }
 
 #[derive(Clone)]
 pub enum InstallLogMode {
-    /// We need pnpm but don't have it — prompt for confirmation.
+    /// We need pnpm but don't have it — prompt for Corepack activation.
     ConfirmPnpm { owner_repo: String },
     /// Child process is streaming or just finished. Status lives on the
     /// `CommandStream` itself.
@@ -538,7 +538,7 @@ impl App {
 
     /// Entry point for the Skills-tab `p` shortcut. If pnpm is on PATH,
     /// spawn `pnpx skills add <owner/repo>` and open the tailing popup.
-    /// Otherwise open the confirm-pnpm prompt first.
+    /// Otherwise open the Corepack prompt first.
     pub fn install_skill_via_pnpx(&mut self, owner_repo: &str) {
         match skill_cli_service::detect() {
             InstallMethod::None => {
@@ -550,8 +550,7 @@ impl App {
                 });
             }
             InstallMethod::NodeOnly => {
-                // Node but no package manager — treat like missing so the
-                // confirm prompt still offers to install pnpm.
+                // Node but no package manager — Corepack can usually provide pnpm.
                 self.install_log_popup = Some(InstallLogPopup {
                     mode: InstallLogMode::ConfirmPnpm {
                         owner_repo: owner_repo.to_string(),
@@ -569,7 +568,7 @@ impl App {
         }
     }
 
-    /// Confirm popup → yes: start the pnpm installer, stay in popup.
+    /// Confirm popup -> yes: enable pnpm through Corepack, stay in popup.
     pub fn install_log_confirm_pnpm(&mut self) {
         let Some(popup) = self.install_log_popup.as_mut() else {
             return;
@@ -577,7 +576,7 @@ impl App {
         let InstallLogMode::ConfirmPnpm { .. } = &popup.mode else {
             return;
         };
-        let stream = skill_cli_service::install_pnpm_via_curl();
+        let stream = skill_cli_service::enable_pnpm_via_corepack();
         popup.mode = InstallLogMode::Streaming(stream);
     }
 
@@ -613,7 +612,7 @@ impl App {
         }
     }
 
-    /// User pressed Enter/Esc on the streaming popup. If the pnpm installer
+    /// User pressed Enter/Esc on the streaming popup. If pnpm activation
     /// just finished successfully and a skill is pending, auto-chain into
     /// `pnpx skills add <pending>`. Otherwise close + trigger a rescan so
     /// freshly installed files land in the Skills tab.
@@ -632,7 +631,7 @@ impl App {
                 popup.pending_skill.as_ref(),
                 matches!(
                     &popup.mode,
-                    InstallLogMode::Streaming(s) if s.title == "install pnpm"
+                    InstallLogMode::Streaming(s) if s.title == "enable pnpm"
                 ),
             ) {
                 let owner_repo = pending.clone();

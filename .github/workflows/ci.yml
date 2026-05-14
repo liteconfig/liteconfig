@@ -23,7 +23,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: pnpm/action-setup@v4
       - uses: Swatinem/rust-cache@v2
+      - name: pnpm check
+        run: pnpm check:js
       - name: cargo fmt
         run: cargo fmt --all -- --check
       - name: cargo clippy

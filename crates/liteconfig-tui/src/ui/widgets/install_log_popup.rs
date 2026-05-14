@@ -1,5 +1,5 @@
-//! Tails the stdout/stderr of a spawned installer (pnpx skills add, pnpm
-//! bootstrap). Reads the shared buffers on each frame so lines appear as
+//! Tails the stdout/stderr of a spawned installer (pnpx skills add, Corepack
+//! pnpm activation). Reads the shared buffers on each frame so lines appear as
 //! they land — no blocking, no polling loop.
 //!
 //! Phases: a confirm-pnpm popup (yes/no) can precede the stream; once
@@ -24,7 +24,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     frame.render_widget(Clear, popup_area);
 
     let title = match &popup.mode {
-        InstallLogMode::ConfirmPnpm { .. } => " Install pnpm? ".to_string(),
+        InstallLogMode::ConfirmPnpm { .. } => " Enable pnpm? ".to_string(),
         InstallLogMode::Streaming(s) => format!(" Installing — {} ", s.title),
     };
     let block = Block::default()
@@ -67,12 +67,12 @@ fn render_confirm(frame: &mut Frame<'_>, app: &App, area: Rect, owner_repo: &str
         )),
         Line::from(Span::raw("")),
         Line::from(Span::styled(
-            "Run:  curl -fsSL https://get.pnpm.io/install.sh | sh -",
+            "Run:  corepack enable pnpm",
             Style::default().fg(theme.accent),
         )),
         Line::from(Span::raw("")),
         Line::from(Span::styled(
-            "This will modify your shell rc. Declining falls back to git-clone.",
+            "This uses Node.js Corepack. Declining falls back to git-clone.",
             Style::default().fg(theme.muted),
         )),
     ];
@@ -84,7 +84,7 @@ fn render_confirm(frame: &mut Frame<'_>, app: &App, area: Rect, owner_repo: &str
     );
     let hint = Line::from(vec![
         Span::styled(" y ", theme.accent_style()),
-        Span::styled("install pnpm   ", theme.muted_style()),
+        Span::styled("enable pnpm   ", theme.muted_style()),
         Span::styled(" n ", theme.accent_style()),
         Span::styled("use git-clone   ", theme.muted_style()),
         Span::styled(" Esc ", theme.accent_style()),

@@ -98,3 +98,22 @@ jobs:
             --title "liteconfig ${TAG}" \
             --generate-notes \
             dist/liteconfig-*.tar.gz dist/SHA256SUMS
+
+  publish-npm:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Verify npm wrapper
+        run: pnpm check:js
+      - name: Publish npm launcher
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm publish --access public --no-git-checks --registry https://registry.npmjs.org

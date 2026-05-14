@@ -3,8 +3,8 @@
 //!
 //! The CLI understands sources we can't handle with a git clone — notably
 //! the `skills.volces.com/...` pseudo-registry and a few non-GitHub git
-//! forges. When `pnpm` or `node` are missing the caller gets an enum back
-//! so the TUI can offer to install pnpm + stream the installer's output.
+//! forges. When `pnpm` is missing but `node` is present, the TUI can offer
+//! to activate pnpm through Corepack and stream the output.
 //!
 //! Every spawn returns a `CommandStream` whose internal fields are shared
 //! across threads — a reader thread drains stdout/stderr into the shared
@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 /// What we found on PATH. Drives whether the TUI offers `p` as an install
-/// shortcut or prompts for a pnpm install first.
+/// shortcut or prompts for Corepack activation first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallMethod {
     /// `pnpm` is on PATH → prefer `pnpx skills add <owner/repo>`.
@@ -121,19 +121,22 @@ pub fn install_via_pnpx(owner_repo: &str) -> CommandStream {
     stream
 }
 
-/// Install pnpm globally via the official curl installer. Matches the
-/// recommended command on https://pnpm.io/installation. Only used when the
-/// user explicitly confirms the installer popup.
-pub fn install_pnpm_via_curl() -> CommandStream {
+/// Enable pnpm through Corepack. This avoids piping remote installer scripts
+/// into a shell; Corepack is bundled with modern Node.js installations.
+pub fn enable_pnpm_via_corepack() -> CommandStream {
     let stream = CommandStream {
-        title: "install pnpm".to_string(),
+        title: "enable pnpm".to_string(),
         lines: Arc::new(Mutex::new(Vec::new())),
         status: Arc::new(Mutex::new(RunStatus::Running)),
     };
-    let shell_cmd = "curl -fsSL https://get.pnpm.io/install.sh | sh -";
+    if which("corepack").is_none() {
+        *stream.status.lock().unwrap() =
+            RunStatus::Err("corepack not found on PATH; install pnpm manually".to_string());
+        return stream;
+    }
     spawn_and_stream(
-        "sh",
-        vec!["-lc".into(), shell_cmd.into()],
+        "corepack",
+        vec!["enable".into(), "pnpm".into()],
         None,
         stream.clone(),
     );

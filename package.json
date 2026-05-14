@@ -1,0 +1,33 @@
+{
+  "name": "liteconfig",
+  "version": "0.1.0",
+  "description": "Fast TUI for syncing AI coding agent configs, skills, MCP, and rules.",
+  "license": "Apache-2.0",
+  "author": "Piyush Mohite",
+  "homepage": "https://github.com/liteconfig/liteconfig#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liteconfig/liteconfig.git"
+  },
+  "bugs": {
+    "url": "https://github.com/liteconfig/liteconfig/issues"
+  },
+  "bin": {
+    "liteconfig": "bin/liteconfig.js"
+  },
+  "files": [
+    "bin/liteconfig.js",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "check:js": "node --check bin/liteconfig.js && node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "pnpm@11.0.9",
+  "publishConfig": {
+    "access": "public"
+  }
+}

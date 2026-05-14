@@ -11,6 +11,16 @@ A blazing-fast TUI for managing AI coding-agent configurations across **Claude C
 
 ## Install
 
+### pnpx (no local install)
+
+```sh
+pnpx liteconfig
+```
+
+The npm package is a small launcher. On first run it downloads the matching
+GitHub release binary, verifies it against `SHA256SUMS`, caches it in your
+system cache directory, then starts the TUI.
+
 ### Cargo (any platform)
 
 ```sh
