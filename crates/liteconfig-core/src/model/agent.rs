@@ -16,6 +16,7 @@ pub enum AgentKind {
     Codex,
     Gemini,
     Cursor,
+    OpenCode,
 }
 
 pub const ALL_AGENT_KINDS: &[AgentKind] = &[
@@ -23,6 +24,7 @@ pub const ALL_AGENT_KINDS: &[AgentKind] = &[
     AgentKind::Codex,
     AgentKind::Gemini,
     AgentKind::Cursor,
+    AgentKind::OpenCode,
 ];
 
 impl AgentKind {
@@ -32,6 +34,7 @@ impl AgentKind {
             AgentKind::Codex => "codex",
             AgentKind::Gemini => "gemini",
             AgentKind::Cursor => "cursor",
+            AgentKind::OpenCode => "opencode",
         }
     }
 
@@ -41,22 +44,26 @@ impl AgentKind {
             AgentKind::Codex => "Codex",
             AgentKind::Gemini => "Gemini CLI",
             AgentKind::Cursor => "Cursor",
+            AgentKind::OpenCode => "OpenCode",
         }
     }
 
-    /// Two-letter label used inside agent pills (`Cl`, `Cx`, `Gm`, `Cr`).
+    /// Two-letter label used inside agent pills (`Cl`, `Cx`, `Gm`, `Cr`, `Oc`).
     pub fn short_label(self) -> &'static str {
         match self {
             AgentKind::Claude => "Cl",
             AgentKind::Codex => "Cx",
             AgentKind::Gemini => "Gm",
             AgentKind::Cursor => "Cr",
+            AgentKind::OpenCode => "Oc",
         }
     }
 
-    /// Whether this agent has a "profile settings" concept (full provider
-    /// config swap). Cursor does not — it only participates in MCP + skills
-    /// + rules sync.
+    /// Whether this agent has a "profile settings" concept.
+    ///
+    /// Cursor does not support full provider config swaps; it only
+    /// participates in MCP, skills, and rules sync. OpenCode has a single
+    /// `opencode.json` that profile switching maps over, same as Claude.
     pub fn supports_profiles(self) -> bool {
         !matches!(self, AgentKind::Cursor)
     }
@@ -77,6 +84,7 @@ impl FromStr for AgentKind {
             "codex" => Ok(AgentKind::Codex),
             "gemini" => Ok(AgentKind::Gemini),
             "cursor" => Ok(AgentKind::Cursor),
+            "opencode" => Ok(AgentKind::OpenCode),
             other => Err(Error::UnknownAgent(other.to_string())),
         }
     }

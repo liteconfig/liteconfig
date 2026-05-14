@@ -41,6 +41,8 @@ pub struct PathOverrides {
     pub gemini_config_dir: Option<String>,
     #[serde(default)]
     pub cursor_config_dir: Option<String>,
+    #[serde(default)]
+    pub opencode_config_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

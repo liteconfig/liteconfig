@@ -68,6 +68,7 @@ pub fn install_from_local(
         sync_method: SyncMethod::Inherit,
         enabled: Default::default(),
         content_hash: Some(hash_directory(&dest)?),
+        last_synced_hash: None,
         installed_at: now,
         updated_at: now,
     };
@@ -165,6 +166,10 @@ pub fn scan_from_live(db: &Database, settings: &Settings) -> Result<Vec<Skill>> 
             let description = read_skill_description(&path);
             let mut enabled = std::collections::BTreeMap::new();
             enabled.insert(agent, true);
+            // Hash upfront so the Status column transitions to "unsynced"
+            // instead of staying "unknown" forever — the previous behaviour
+            // because `scan_from_live` never computed a hash.
+            let content_hash = hash_directory(&path).ok();
             let skill = Skill {
                 id: uuid::Uuid::new_v4().to_string(),
                 name: name.clone(),
@@ -173,7 +178,8 @@ pub fn scan_from_live(db: &Database, settings: &Settings) -> Result<Vec<Skill>> 
                 source: SkillSource::Local,
                 sync_method: SyncMethod::Inherit,
                 enabled,
-                content_hash: None,
+                content_hash,
+                last_synced_hash: None,
                 installed_at: now,
                 updated_at: now,
             };
@@ -203,8 +209,9 @@ fn read_skill_description(dir: &Path) -> Option<String> {
 /// (symlink or copy per resolved method). Agents where the skill is disabled
 /// have any existing materialization removed.
 pub fn sync_one(db: &Database, settings: &Settings, id: &str) -> Result<()> {
-    let skill = get(db, id)?;
+    let mut skill = get(db, id)?;
     sync_skill(&skill, settings)?;
+    stamp_synced_hash(db, &mut skill)?;
     Ok(())
 }
 
@@ -218,9 +225,46 @@ pub fn sync_many(db: &Database, settings: &Settings, ids: &[String]) -> Result<(
 
 /// Sync every skill.
 pub fn sync_all(db: &Database, settings: &Settings) -> Result<()> {
-    for skill in db.list_skills()? {
+    for mut skill in db.list_skills()? {
         sync_skill(&skill, settings)?;
+        stamp_synced_hash(db, &mut skill)?;
     }
+    Ok(())
+}
+
+/// Mark a skill as just-synced. Recomputes its `content_hash` from the live
+/// directory (catches the case where `sync_one` lands an updated tree) and
+/// mirrors it into `last_synced_hash`. Status then reads as `InSync` until
+/// the user edits the files again.
+/// Walk every skill without a `content_hash` and compute one from its
+/// live directory. Skills whose directory is missing on disk are left alone
+/// (they'll read as `Unknown` — the right state). Returns the number of
+/// rows actually updated so the caller can decide whether to surface a toast.
+pub fn recompute_missing_hashes(db: &Database) -> Result<usize> {
+    let mut updated = 0;
+    for mut skill in db.list_skills()? {
+        if skill.content_hash.as_deref().is_some_and(|h| !h.is_empty()) {
+            continue;
+        }
+        if !skill.directory.exists() {
+            continue;
+        }
+        if let Ok(h) = hash_directory(&skill.directory) {
+            skill.content_hash = Some(h);
+            skill.updated_at = chrono::Utc::now().timestamp_millis();
+            db.upsert_skill(&skill)?;
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
+fn stamp_synced_hash(db: &Database, skill: &mut Skill) -> Result<()> {
+    let hash = hash_directory(&skill.directory).ok();
+    skill.content_hash = hash.clone();
+    skill.last_synced_hash = hash;
+    skill.updated_at = chrono::Utc::now().timestamp_millis();
+    db.upsert_skill(skill)?;
     Ok(())
 }
 

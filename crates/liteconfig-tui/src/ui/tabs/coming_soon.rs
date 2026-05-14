@@ -1,5 +1,5 @@
-//! Placeholder panel shown for tabs that haven't been built out yet. Tells
-//! the user which milestone will implement the feature.
+//! Coming-soon panel for tabs that have a planned milestone but no shipped
+//! workflow yet.
 
 use ratatui::layout::Alignment;
 use ratatui::style::{Modifier, Style};

@@ -9,6 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::model::agent::AgentKind;
 use crate::model::mcp::McpServer;
+use crate::model::plugin::{Plugin, PluginContents, PluginSource};
 use crate::model::profile::{Profile, ProfileMeta};
 use crate::model::rule::Rule;
 use crate::model::skill::{Skill, SkillSource, StorageMode, SyncMethod};
@@ -16,7 +17,7 @@ use crate::model::skill_repo::SkillRepo;
 use crate::paths::{ensure_dir, liteconfig_db_path, liteconfig_dir};
 use crate::{Error, Result};
 
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 4;
 
 pub struct Database {
     conn: Connection,
@@ -96,6 +97,12 @@ impl Database {
         if current < 2 {
             self.conn.execute_batch(MIGRATION_V2)?;
         }
+        if current < 3 {
+            self.conn.execute_batch(MIGRATION_V3)?;
+        }
+        if current < 4 {
+            self.conn.execute_batch(MIGRATION_V4)?;
+        }
 
         self.conn.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('version', ?1)",
@@ -167,7 +174,8 @@ impl Database {
     pub fn list_skills(&self) -> Result<Vec<Skill>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, description, directory, source_kind, repo_owner, repo_name,
-                    repo_branch, content_hash, sync_method, enabled_json, installed_at, updated_at
+                    repo_branch, content_hash, sync_method, enabled_json, installed_at, updated_at,
+                    last_synced_hash
              FROM skills ORDER BY name COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], row_to_skill)?;
@@ -181,7 +189,8 @@ impl Database {
     pub fn get_skill(&self, id: &str) -> Result<Option<Skill>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, description, directory, source_kind, repo_owner, repo_name,
-                    repo_branch, content_hash, sync_method, enabled_json, installed_at, updated_at
+                    repo_branch, content_hash, sync_method, enabled_json, installed_at, updated_at,
+                    last_synced_hash
              FROM skills WHERE id = ?1",
         )?;
         stmt.query_row(params![id], row_to_skill)
@@ -207,8 +216,8 @@ impl Database {
         self.conn.execute(
             "INSERT INTO skills (id, name, description, directory, source_kind, repo_owner, repo_name,
                                   repo_branch, content_hash, sync_method, enabled_json,
-                                  installed_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                                  installed_at, updated_at, last_synced_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(id) DO UPDATE SET
                  name = excluded.name,
                  description = excluded.description,
@@ -220,7 +229,8 @@ impl Database {
                  content_hash = excluded.content_hash,
                  sync_method = excluded.sync_method,
                  enabled_json = excluded.enabled_json,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at,
+                 last_synced_hash = excluded.last_synced_hash",
             params![
                 skill.id,
                 skill.name,
@@ -235,6 +245,7 @@ impl Database {
                 enabled,
                 skill.installed_at,
                 skill.updated_at,
+                skill.last_synced_hash,
             ],
         )?;
         Ok(())
@@ -390,6 +401,72 @@ impl Database {
         Ok(())
     }
 
+    // ---------- plugins ----------
+
+    pub fn list_plugins(&self) -> Result<Vec<Plugin>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, description, directory, source_json, enabled_json,
+                    contents_json, content_hash, installed_at, last_synced_at
+             FROM plugins ORDER BY name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], row_to_plugin)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn get_plugin(&self, id: &str) -> Result<Option<Plugin>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, description, directory, source_json, enabled_json,
+                    contents_json, content_hash, installed_at, last_synced_at
+             FROM plugins WHERE id = ?1",
+        )?;
+        stmt.query_row(params![id], row_to_plugin)
+            .optional()
+            .map_err(Error::from)
+    }
+
+    pub fn upsert_plugin(&self, plugin: &Plugin) -> Result<()> {
+        let source_json = serde_json::to_string(&plugin.source)?;
+        let enabled_json = serde_json::to_string(&plugin.enabled)?;
+        let contents_json = serde_json::to_string(&plugin.contents)?;
+        self.conn.execute(
+            "INSERT INTO plugins (id, name, description, directory, source_json, enabled_json,
+                                    contents_json, content_hash, installed_at, last_synced_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(id) DO UPDATE SET
+                 name = excluded.name,
+                 description = excluded.description,
+                 directory = excluded.directory,
+                 source_json = excluded.source_json,
+                 enabled_json = excluded.enabled_json,
+                 contents_json = excluded.contents_json,
+                 content_hash = excluded.content_hash,
+                 last_synced_at = excluded.last_synced_at",
+            params![
+                plugin.id,
+                plugin.name,
+                plugin.description,
+                plugin.directory.to_string_lossy().to_string(),
+                source_json,
+                enabled_json,
+                contents_json,
+                plugin.content_hash,
+                plugin.installed_at,
+                plugin.last_synced_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_plugin(&self, id: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM plugins WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     // ---------- common config ----------
 
     pub fn get_common_config(&self, agent: AgentKind) -> Result<Option<serde_json::Value>> {
@@ -500,6 +577,33 @@ CREATE TABLE IF NOT EXISTS skill_repos (
 );
 "#;
 
+// V3 adds `last_synced_hash` to `skills` for drift detection. Default NULL
+// so every existing row boots as "unsynced" — the startup rescan then
+// populates `content_hash` and the first explicit sync populates
+// `last_synced_hash`.
+const MIGRATION_V3: &str = r#"
+ALTER TABLE skills ADD COLUMN last_synced_hash TEXT;
+"#;
+
+// V4 adds the `plugins` table — each row = one Claude Code-style plugin
+// bundle cloned into `~/.liteconfig/plugins/<id>/`. The bundle's skills /
+// MCP servers / rules are imported into the existing tables; this row is
+// just the "installed plugin" metadata.
+const MIGRATION_V4: &str = r#"
+CREATE TABLE IF NOT EXISTS plugins (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    directory       TEXT NOT NULL,
+    source_json     TEXT NOT NULL,
+    enabled_json    TEXT NOT NULL,
+    contents_json   TEXT NOT NULL,
+    content_hash    TEXT,
+    installed_at    INTEGER NOT NULL,
+    last_synced_at  INTEGER
+);
+"#;
+
 fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
     let id: String = row.get(0)?;
     let agent_str: String = row.get(1)?;
@@ -543,6 +647,7 @@ fn row_to_skill(row: &rusqlite::Row<'_>) -> rusqlite::Result<Skill> {
     let enabled_json: String = row.get(10)?;
     let installed_at: i64 = row.get(11)?;
     let updated_at: i64 = row.get(12)?;
+    let last_synced_hash: Option<String> = row.get(13)?;
 
     let source = match source_kind.as_str() {
         "local" => SkillSource::Local,
@@ -583,6 +688,7 @@ fn row_to_skill(row: &rusqlite::Row<'_>) -> rusqlite::Result<Skill> {
         sync_method,
         enabled,
         content_hash,
+        last_synced_hash,
         installed_at,
         updated_at,
     })
@@ -641,6 +747,42 @@ fn row_to_skill_repo(row: &rusqlite::Row<'_>) -> rusqlite::Result<SkillRepo> {
         url: row.get(5)?,
         last_synced_at: row.get(6)?,
         skill_count: row.get::<_, i64>(7)? as u32,
+    })
+}
+
+fn row_to_plugin(row: &rusqlite::Row<'_>) -> rusqlite::Result<Plugin> {
+    let id: String = row.get(0)?;
+    let name: String = row.get(1)?;
+    let description: Option<String> = row.get(2)?;
+    let directory: String = row.get(3)?;
+    let source_json: String = row.get(4)?;
+    let enabled_json: String = row.get(5)?;
+    let contents_json: String = row.get(6)?;
+    let content_hash: Option<String> = row.get(7)?;
+    let installed_at: i64 = row.get(8)?;
+    let last_synced_at: Option<i64> = row.get(9)?;
+
+    let source: PluginSource = serde_json::from_str(&source_json).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    let enabled: BTreeMap<AgentKind, bool> = serde_json::from_str(&enabled_json).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    let contents: PluginContents = serde_json::from_str(&contents_json).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+
+    Ok(Plugin {
+        id,
+        name,
+        description,
+        directory: PathBuf::from(directory),
+        source,
+        enabled,
+        contents,
+        content_hash,
+        installed_at,
+        last_synced_at,
     })
 }
 

@@ -5,7 +5,7 @@ Contributions are welcome! This guide covers building, testing, and extending li
 ## Building
 
 ```sh
-git clone https://github.com/git-pi-e/liteconfig
+git clone https://github.com/liteconfig/liteconfig
 cd liteconfig
 cargo build --release
 # Binary: target/release/liteconfig
@@ -27,7 +27,7 @@ liteconfig is split into two crates:
 Pure Rust library with no UI dependencies. Contains:
 - **Agent adapters** (`src/agents/`) — one per agent (Claude, Codex, Gemini). Implements the `AgentAdapter` trait to read/write live configs.
 - **Data model** (`src/model/`) — profiles, skills, MCP servers, rules.
-- **SQLite database** (`src/db.rs`) — schema, migrations, queries at `~/.git-pi-e/liteconfig.db`.
+- **SQLite database** (`src/db.rs`) — schema, migrations, queries at `~/.liteconfig/liteconfig.db`.
 - **Services** (`src/services/`) — profile switching, skill sync, MCP sync, backup/restore, secrets management.
 - **Filesystem utilities** (`src/fs_util.rs`) — atomic writes, symlink/copy, content hashing.
 

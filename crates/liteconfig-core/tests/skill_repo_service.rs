@@ -31,7 +31,7 @@ fn add_sync_and_resync_local_repo() {
     let repo_dir = tempfile::tempdir().unwrap();
     seed_repo(repo_dir.path(), &["alpha", "beta"]);
 
-    let added = skill_repo_service::add(&db, repo_dir.path().to_str().unwrap()).unwrap();
+    let added = skill_repo_service::add(&db, repo_dir.path().to_str().unwrap(), None).unwrap();
     assert_eq!(added.url, repo_dir.path().to_string_lossy());
     assert_eq!(added.skill_count, 0);
     assert!(added.last_synced_at.is_none());
@@ -56,7 +56,7 @@ fn parse_github_shorthand_adds_record() {
     let (_home, _g) = with_temp_home();
     let db = Database::open_in_memory().unwrap();
 
-    let r = skill_repo_service::add(&db, "anthropic/cookbook").unwrap();
+    let r = skill_repo_service::add(&db, "anthropic/cookbook", None).unwrap();
     assert_eq!(r.name, "anthropic/cookbook");
     assert_eq!(r.owner.as_deref(), Some("anthropic"));
     assert_eq!(r.repo, "cookbook");
@@ -71,7 +71,7 @@ fn remove_deletes_repo_record() {
     let (_home, _g) = with_temp_home();
     let db = Database::open_in_memory().unwrap();
 
-    let r = skill_repo_service::add(&db, "anthropic/cookbook").unwrap();
+    let r = skill_repo_service::add(&db, "anthropic/cookbook", None).unwrap();
     assert!(db.get_skill_repo(&r.id).unwrap().is_some());
     skill_repo_service::remove(&db, &r.id).unwrap();
     assert!(db.get_skill_repo(&r.id).unwrap().is_none());
@@ -82,6 +82,6 @@ fn rejects_garbage_input() {
     let (_home, _g) = with_temp_home();
     let db = Database::open_in_memory().unwrap();
 
-    assert!(skill_repo_service::add(&db, "").is_err());
-    assert!(skill_repo_service::add(&db, "not a repo at all").is_err());
+    assert!(skill_repo_service::add(&db, "", None).is_err());
+    assert!(skill_repo_service::add(&db, "not a repo at all", None).is_err());
 }

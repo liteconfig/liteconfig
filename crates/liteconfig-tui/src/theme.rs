@@ -105,8 +105,14 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
         include_str!("../../../themes/catppuccin-latte.json"),
     ),
     ("vesper", include_str!("../../../themes/vesper.json")),
-    ("noir-berry", include_str!("../../../themes/noir-berry.json")),
-    ("velvet-ember", include_str!("../../../themes/velvet-ember.json")),
+    (
+        "noir-berry",
+        include_str!("../../../themes/noir-berry.json"),
+    ),
+    (
+        "velvet-ember",
+        include_str!("../../../themes/velvet-ember.json"),
+    ),
     ("slater", include_str!("../../../themes/slater.json")),
     ("cardinal", include_str!("../../../themes/cardinal.json")),
     ("abyss", include_str!("../../../themes/abyss.json")),
@@ -212,6 +218,43 @@ impl Theme {
         Style::default()
             .fg(self.accent)
             .add_modifier(Modifier::BOLD)
+    }
+
+    /// Sweep `primary → accent` across `text` as per-char RGB-interpolated
+    /// spans. `tick_idx` rotates the starting offset so the gradient drifts
+    /// slightly over time. Falls back to solid `primary` if either anchor
+    /// is not an RGB color (named / indexed colors carry no components).
+    pub fn gradient_title<'a>(self, text: &'a str, tick_idx: u8) -> Vec<ratatui::text::Span<'a>> {
+        let (a, b) = match (self.primary, self.accent) {
+            (Color::Rgb(r0, g0, b0), Color::Rgb(r1, g1, b1)) => ((r0, g0, b0), (r1, g1, b1)),
+            _ => {
+                return vec![ratatui::text::Span::styled(
+                    text,
+                    Style::default()
+                        .fg(self.primary)
+                        .add_modifier(Modifier::BOLD),
+                )]
+            }
+        };
+        let n = text.chars().count().max(1);
+        let offset = tick_idx as usize;
+        text.chars()
+            .enumerate()
+            .map(|(i, ch)| {
+                // 0..=1 progress, slow drift via offset.
+                let t = (((i + offset / 4) % (n * 2)) as f32 / (n * 2) as f32) * 2.0;
+                let t = if t > 1.0 { 2.0 - t } else { t };
+                let r = (a.0 as f32 + (b.0 as f32 - a.0 as f32) * t) as u8;
+                let g = (a.1 as f32 + (b.1 as f32 - a.1 as f32) * t) as u8;
+                let bch = (a.2 as f32 + (b.2 as f32 - a.2 as f32) * t) as u8;
+                ratatui::text::Span::styled(
+                    ch.to_string(),
+                    Style::default()
+                        .fg(Color::Rgb(r, g, bch))
+                        .add_modifier(Modifier::BOLD),
+                )
+            })
+            .collect()
     }
 }
 

@@ -32,7 +32,7 @@ Living document. Tracks shipped features, work in progress, and features we inte
 - **Cloud-backed config dir** — pointing liteconfig at a Dropbox / iCloud / OneDrive folder for cross-machine sync, plus WebDAV for self-hosted remotes.
 - **Per-file Cursor rule writer** — currently Cursor rules sync is read-only because `.cursor/rules/*.mdc` is a dir-of-files, not a single concatenated file. Needs a per-rule writer.
 - **Auto-update for skills** — periodic `git pull` for skill repos; re-scan + surface changes.
-- **Windows testing matrix** — we compile and assume-it-works on Windows today; need a CI job that exercises the full flow.
+- **Windows testing matrix** — Windows builds exist today; we still need a CI job that exercises the full flow.
 - **i18n** — UI strings in English only.
 - **Auto-launch + system tray quick-switch** — parity with cc-switch's always-available profile switcher.
 

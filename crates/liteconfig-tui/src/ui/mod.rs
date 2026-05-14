@@ -10,7 +10,7 @@ pub mod widgets;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Tabs};
 use ratatui::Frame;
 
 use crate::app::{App, Tab};
@@ -46,6 +46,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) -> FrameOutput {
     status_bar::render(frame, app, layout[3]);
     widgets::activity_panel::render(frame, app, area);
     widgets::help_overlay::render(frame, app, area);
+    widgets::install_log_popup::render(frame, app, area);
     widgets::toast::render(frame, app, area);
 
     FrameOutput {
@@ -73,24 +74,28 @@ fn render_tab_bar(frame: &mut Frame<'_>, app: &App, area: Rect) -> Vec<TabHit> {
         })
         .collect();
 
+    // Branded title: gradient-animated `liteconfig` wordmark + muted suffix.
+    let mut title_spans: Vec<Span<'_>> = vec![Span::raw(" ")];
+    title_spans.extend(theme.gradient_title("liteconfig", app.tick_idx));
+    title_spans.push(Span::raw(" "));
+    title_spans.push(Span::styled(
+        format!(
+            "· {} · profile: {}",
+            app.focused_agent().display_name(),
+            app.current_profile_name(app.focused_agent())
+                .unwrap_or("(none)")
+        ),
+        theme.muted_style(),
+    ));
+
     let tabs = Tabs::new(titles)
         .select(active)
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .border_style(theme.border_style(false))
-                .title(Line::from(vec![
-                    Span::styled(" liteconfig ", theme.accent_style()),
-                    Span::styled(
-                        format!(
-                            "· {} · profile: {}",
-                            app.focused_agent().display_name(),
-                            app.current_profile_name(app.focused_agent())
-                                .unwrap_or("(none)")
-                        ),
-                        theme.muted_style(),
-                    ),
-                ])),
+                .title(Line::from(title_spans)),
         )
         .style(theme.default_style())
         .highlight_style(
@@ -144,8 +149,9 @@ fn render_body(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<Butt
         Tab::Skills => tabs::skills::render(frame, app, area, hits),
         Tab::Mcp => tabs::mcp::render(frame, app, area, hits),
         Tab::Rules => tabs::rules::render(frame, app, area, hits),
+        Tab::Plugins => tabs::plugins::render(frame, app, area, hits),
         Tab::Backup => tabs::backup::render(frame, app, area, hits),
-        Tab::Sessions => tabs::placeholder::render(frame, app, area, "Sessions", "v1.1"),
+        Tab::Sessions => tabs::coming_soon::render(frame, app, area, "Sessions", "v1.1"),
         Tab::Settings => tabs::settings::render(frame, app, area),
     }
 }
@@ -226,6 +232,11 @@ fn render_hints(frame: &mut Frame<'_>, app: &App, area: Rect) {
             hint("a", "agents"),
             hint("S", "sync all"),
             hint("d", "delete"),
+        ],
+        Tab::Plugins => vec![
+            hint("↑↓", "move"),
+            hint("n", "install"),
+            hint("d", "delete (×2)"),
         ],
         Tab::Backup => vec![
             hint("↑↓", "move"),

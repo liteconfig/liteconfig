@@ -64,6 +64,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<Butto
     if app.presets_popup.is_some() {
         crate::ui::widgets::presets_popup::render(frame, app, area);
     }
+    if app.mcp_search_popup.is_some() {
+        crate::ui::widgets::mcp_search_popup::render(frame, app, area);
+    }
 }
 
 fn render_toolbar(frame: &mut Frame<'_>, app: &App, area: Rect, hits: &mut Vec<ButtonHit>) {

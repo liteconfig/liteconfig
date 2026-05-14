@@ -41,13 +41,20 @@ enum RepoKind {
 /// Parse the caller's `owner_or_url` string and register a new repo in the
 /// DB. The clone itself happens later in [`sync`] so adding many repos stays
 /// cheap and the UI can show them before the network round-trips.
-pub fn add(db: &Database, owner_or_url: &str) -> Result<SkillRepo> {
+///
+/// `branch_override` lets the caller specify the git branch explicitly —
+/// critical for presets like `ComposioHQ/awesome-claude-skills` whose
+/// default branch is `master`, not `main`. If `None`, the parser either
+/// picks up a `#branch` suffix from the input (e.g. `owner/name#dev`) or
+/// falls back to `main`.
+pub fn add(db: &Database, owner_or_url: &str, branch_override: Option<&str>) -> Result<SkillRepo> {
     let input = owner_or_url.trim();
     if input.is_empty() {
         return Err(Error::InvalidConfig("empty repo identifier".into()));
     }
 
     let kind = parse_repo_kind(input)?;
+    let kind = apply_branch_override(kind, branch_override);
     let id = uuid::Uuid::new_v4().to_string();
     let repo = match kind {
         RepoKind::Github {
@@ -122,6 +129,36 @@ pub fn remove(db: &Database, id: &str) -> Result<()> {
 
 // ---------- parsing ----------
 
+/// Split an input like `owner/name#branch` into `(owner/name, Some("branch"))`.
+/// No `#` → `(input, None)`. Used by every parser branch below so the syntax
+/// works uniformly for shorthand, https, and ssh URLs.
+fn split_branch_suffix(input: &str) -> (&str, Option<&str>) {
+    match input.rsplit_once('#') {
+        Some((base, branch)) if !branch.is_empty() => (base, Some(branch)),
+        _ => (input, None),
+    }
+}
+
+/// Overlay an explicit branch onto a parsed `RepoKind`. Local repos ignore
+/// the override (the path IS the source of truth); GitHub repos get their
+/// branch replaced.
+fn apply_branch_override(kind: RepoKind, override_branch: Option<&str>) -> RepoKind {
+    let Some(b) = override_branch else {
+        return kind;
+    };
+    match kind {
+        RepoKind::Github {
+            owner, name, url, ..
+        } => RepoKind::Github {
+            owner,
+            name,
+            branch: b.to_string(),
+            url,
+        },
+        other => other,
+    }
+}
+
 fn parse_repo_kind(input: &str) -> Result<RepoKind> {
     let path = Path::new(input);
     if path.is_absolute() && path.exists() {
@@ -130,9 +167,12 @@ fn parse_repo_kind(input: &str) -> Result<RepoKind> {
         });
     }
 
-    if let Some(rest) = input
+    let (base, branch_suffix) = split_branch_suffix(input);
+    let branch = branch_suffix.unwrap_or("main").to_string();
+
+    if let Some(rest) = base
         .strip_prefix("https://github.com/")
-        .or_else(|| input.strip_prefix("http://github.com/"))
+        .or_else(|| base.strip_prefix("http://github.com/"))
     {
         let rest = rest.trim_end_matches('/').trim_end_matches(".git");
         let mut it = rest.split('/');
@@ -146,12 +186,12 @@ fn parse_repo_kind(input: &str) -> Result<RepoKind> {
         return Ok(RepoKind::Github {
             owner: owner.clone(),
             name: name.clone(),
-            branch: "main".into(),
+            branch,
             url: format!("https://github.com/{owner}/{name}.git"),
         });
     }
 
-    if let Some(rest) = input.strip_prefix("git@github.com:") {
+    if let Some(rest) = base.strip_prefix("git@github.com:") {
         let rest = rest.trim_end_matches('/').trim_end_matches(".git");
         let mut it = rest.split('/');
         let owner = it.next().unwrap_or("").to_string();
@@ -164,20 +204,20 @@ fn parse_repo_kind(input: &str) -> Result<RepoKind> {
         return Ok(RepoKind::Github {
             owner,
             name,
-            branch: "main".into(),
-            url: input.to_string(),
+            branch,
+            url: base.to_string(),
         });
     }
 
     // `owner/name` shorthand — no slashes beyond one, and both halves non-empty.
-    let parts: Vec<&str> = input.split('/').collect();
+    let parts: Vec<&str> = base.split('/').collect();
     if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
         let owner = parts[0].to_string();
         let name = parts[1].to_string();
         return Ok(RepoKind::Github {
             owner: owner.clone(),
             name: name.clone(),
-            branch: "main".into(),
+            branch,
             url: format!("https://github.com/{owner}/{name}.git"),
         });
     }
@@ -215,7 +255,11 @@ fn materialize(repo: &SkillRepo) -> Result<PathBuf> {
                 .map_err(git_err)?;
         }
         Err(_) => {
-            Repository::clone(&repo.url, &dest).map_err(git_err)?;
+            // `clone` honors HEAD's default branch; set the requested branch
+            // explicitly so non-`main` presets (e.g. `master`) work.
+            let mut builder = git2::build::RepoBuilder::new();
+            builder.branch(&repo.branch);
+            builder.clone(&repo.url, &dest).map_err(git_err)?;
         }
     }
     Ok(dest)
@@ -289,6 +333,7 @@ fn ingest_skills(db: &Database, repo: &SkillRepo, scan_root: &Path) -> Result<us
             sync_method: SyncMethod::Inherit,
             enabled: Default::default(),
             content_hash: hash,
+            last_synced_hash: None,
             installed_at: now,
             updated_at: now,
         };

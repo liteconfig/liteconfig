@@ -133,7 +133,10 @@ fn render_legend(frame: &mut Frame<'_>, app: &App, area: Rect) {
         Span::styled(" · ", Style::default().fg(theme.muted)),
         Span::styled("Source: local/github", Style::default().fg(theme.muted)),
         Span::styled(" · ", Style::default().fg(theme.muted)),
-        Span::styled("Status: in sync/unknown", Style::default().fg(theme.muted)),
+        Span::styled(
+            "Status: in sync / drift / unsynced / unknown",
+            Style::default().fg(theme.muted),
+        ),
     ];
 
     frame.render_widget(
@@ -228,15 +231,13 @@ fn render_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 SkillSource::Github { .. } => "github",
             };
 
-            let status = if s
-                .content_hash
-                .as_deref()
-                .map(|h| !h.is_empty())
-                .unwrap_or(false)
-            {
-                "in sync"
-            } else {
-                "unknown"
+            let status = s.status();
+            let status_label = status.as_str();
+            let status_color = match status {
+                liteconfig_core::model::skill::SkillStatus::InSync => theme.success,
+                liteconfig_core::model::skill::SkillStatus::Drifted => theme.danger,
+                liteconfig_core::model::skill::SkillStatus::Unsynced => theme.accent,
+                liteconfig_core::model::skill::SkillStatus::Unknown => theme.muted,
             };
 
             let name_trunc = truncate(&s.name, 32);
@@ -265,7 +266,7 @@ fn render_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
                     Style::default().fg(theme.accent),
                 ),
                 Span::styled(format!("{:<8}  ", source), Style::default().fg(theme.muted)),
-                Span::styled(status, Style::default().fg(theme.muted)),
+                Span::styled(status_label, Style::default().fg(status_color)),
             ]))
         })
         .collect();

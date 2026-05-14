@@ -29,6 +29,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     if app.search_popup.is_some() {
         return handle_search_popup_key(app, key);
     }
+    if app.mcp_search_popup.is_some() {
+        return handle_mcp_search_popup_key(app, key);
+    }
+    if app.install_log_popup.is_some() {
+        return handle_install_log_popup_key(app, key);
+    }
     if app.show_activity {
         if matches!(
             (key.code, key.modifiers),
@@ -86,6 +92,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         Tab::Skills => handle_skills_key(app, key),
         Tab::Mcp => handle_mcp_key(app, key),
         Tab::Rules => handle_rules_key(app, key),
+        Tab::Plugins => handle_plugins_key(app, key),
         Tab::Backup => handle_backup_key(app, key),
         Tab::Settings => handle_settings_key(app, key),
         _ => false,
@@ -135,6 +142,32 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) -> bool {
         }
         (KeyCode::Enter, _) => {
             app.settings_begin_edit();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_plugins_key(app: &mut App, key: KeyEvent) -> bool {
+    // Two-phase delete, identical to Backup tab pattern.
+    if !matches!(key.code, KeyCode::Char('d')) {
+        app.clear_plugin_delete_arm();
+    }
+    match (key.code, key.modifiers) {
+        (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
+            app.move_plugin_focus(-1);
+            true
+        }
+        (KeyCode::Down | KeyCode::Char('j'), KeyModifiers::NONE) => {
+            app.move_plugin_focus(1);
+            true
+        }
+        (KeyCode::Char('n'), KeyModifiers::NONE) => {
+            app.open_new_plugin_menu();
+            true
+        }
+        (KeyCode::Char('d'), KeyModifiers::NONE) => {
+            app.delete_focused_plugin();
             true
         }
         _ => false,
@@ -296,6 +329,10 @@ fn handle_mcp_key(app: &mut App, key: KeyEvent) -> bool {
             app.open_new_mcp_menu();
             true
         }
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+            app.open_search_mcp();
+            true
+        }
         _ => false,
     }
 }
@@ -416,6 +453,25 @@ fn handle_skills_key(app: &mut App, key: KeyEvent) -> bool {
             app.open_search_skills();
             true
         }
+        (KeyCode::Char('p'), KeyModifiers::NONE) => {
+            // Install the focused skill via `pnpx skills add <owner/repo>`.
+            // Only makes sense for github-sourced skills — we derive the
+            // owner/repo from the `SkillSource::Github` variant.
+            let owner_repo = match app.focused_skill().map(|s| s.source.clone()) {
+                Some(liteconfig_core::model::skill::SkillSource::Github {
+                    owner, name, ..
+                }) => format!("{owner}/{name}"),
+                _ => {
+                    app.push_toast(
+                        "Select a github-sourced skill first (or press n to pick a preset)",
+                        crate::app::ToastLevel::Warning,
+                    );
+                    return true;
+                }
+            };
+            app.install_skill_via_pnpx(&owner_repo);
+            true
+        }
         _ => false,
     }
 }
@@ -488,6 +544,71 @@ fn handle_search_popup_key(app: &mut App, key: KeyEvent) -> bool {
     }
 }
 
+fn handle_install_log_popup_key(app: &mut App, key: KeyEvent) -> bool {
+    use crate::app::InstallLogMode;
+    let Some(popup) = app.install_log_popup.as_ref() else {
+        return false;
+    };
+    match &popup.mode {
+        InstallLogMode::ConfirmPnpm { .. } => match (key.code, key.modifiers) {
+            (KeyCode::Char('y') | KeyCode::Char('Y'), _) => {
+                app.install_log_confirm_pnpm();
+                true
+            }
+            (KeyCode::Char('n') | KeyCode::Char('N'), _) => {
+                app.install_log_decline_pnpm();
+                true
+            }
+            (KeyCode::Esc, _) => {
+                app.install_log_popup = None;
+                true
+            }
+            _ => false,
+        },
+        InstallLogMode::Streaming(_) => match (key.code, key.modifiers) {
+            (KeyCode::Enter | KeyCode::Esc, _) => {
+                app.install_log_close();
+                true
+            }
+            _ => false,
+        },
+    }
+}
+
+fn handle_mcp_search_popup_key(app: &mut App, key: KeyEvent) -> bool {
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) => {
+            app.mcp_search_popup_cancel();
+            true
+        }
+        (KeyCode::Enter, _) => {
+            app.mcp_search_popup_enter();
+            true
+        }
+        (KeyCode::Tab, _) => {
+            app.mcp_search_popup_toggle_focus();
+            true
+        }
+        (KeyCode::Backspace, _) => {
+            app.mcp_search_popup_pop();
+            true
+        }
+        (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
+            app.mcp_search_popup_move(-1);
+            true
+        }
+        (KeyCode::Down | KeyCode::Char('j'), KeyModifiers::NONE) => {
+            app.mcp_search_popup_move(1);
+            true
+        }
+        (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+            app.mcp_search_popup_push(c);
+            true
+        }
+        _ => false,
+    }
+}
+
 fn handle_presets_popup_key(app: &mut App, key: KeyEvent) -> bool {
     match (key.code, key.modifiers) {
         (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
@@ -500,6 +621,18 @@ fn handle_presets_popup_key(app: &mut App, key: KeyEvent) -> bool {
         }
         (KeyCode::Enter, _) => {
             app.presets_popup_commit();
+            true
+        }
+        // Ctrl+F inside the MCP presets chooser transitions to live search
+        // so the user doesn't have to Esc + Ctrl+F to reach it.
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+            if matches!(
+                app.presets_popup.as_ref().map(|p| p.kind),
+                Some(crate::app::PresetsKind::Mcp)
+            ) {
+                app.presets_popup_cancel();
+                app.open_search_mcp();
+            }
             true
         }
         (KeyCode::Esc, _) => {
@@ -576,6 +709,8 @@ fn dispatch_button_action(app: &mut App, action: ButtonAction) {
         ButtonAction::RulesSyncAll => app.sync_all_rules(),
         ButtonAction::RulesImport => app.import_rules_from_live(),
         ButtonAction::RulesDelete => app.delete_focused_rule(),
+        ButtonAction::PluginsNew => app.open_new_plugin_menu(),
+        ButtonAction::PluginsDelete => app.delete_focused_plugin(),
     }
 }
 
@@ -614,6 +749,8 @@ pub enum ButtonAction {
     RulesSyncAll,
     RulesImport,
     RulesDelete,
+    PluginsNew,
+    PluginsDelete,
 }
 
 /// One toolbar button's rendered rect + the action it fires.

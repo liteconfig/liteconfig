@@ -23,6 +23,7 @@ pub mod claude;
 pub mod codex;
 pub mod cursor;
 pub mod gemini;
+pub mod opencode;
 
 /// The canonical file paths an agent cares about, resolved for the current
 /// `Settings` (which may contain overrides).
@@ -78,6 +79,7 @@ pub fn registry() -> &'static [Box<dyn AgentAdapter>] {
             Box::new(codex::CodexAdapter),
             Box::new(gemini::GeminiAdapter),
             Box::new(cursor::CursorAdapter),
+            Box::new(opencode::OpencodeAdapter),
         ];
         // Sanity-check: every AgentKind variant has an adapter.
         for k in ALL_AGENT_KINDS {

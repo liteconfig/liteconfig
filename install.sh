@@ -3,18 +3,18 @@
 # and drops it in a user-writable directory on PATH.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/git-pi-e/liteconfig/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/liteconfig/liteconfig/main/install.sh | sh
 #
 # Environment overrides:
 #   LITECONFIG_VERSION  pin a specific version (default: latest release)
 #   LITECONFIG_BIN_DIR  install location (default: $HOME/.local/bin)
-#   LITECONFIG_REPO     override GitHub repo (default: git-pi-e/liteconfig)
+#   LITECONFIG_REPO     override GitHub repo (default: liteconfig/liteconfig)
 #
 # Idempotent: re-running the same command upgrades in place.
 
 set -eu
 
-REPO="${LITECONFIG_REPO:-git-pi-e/liteconfig}"
+REPO="${LITECONFIG_REPO:-liteconfig/liteconfig}"
 VERSION="${LITECONFIG_VERSION:-latest}"
 BIN_DIR="${LITECONFIG_BIN_DIR:-$HOME/.local/bin}"
 BIN_NAME="liteconfig"
@@ -43,7 +43,7 @@ case "$uname_s" in
     Darwin) os="apple-darwin" ;;
     Linux)
         if ldd --version 2>&1 | grep -qi musl; then
-            os="unknown-linux-musl"
+            fail "Prebuilt musl Linux binaries are not published yet - use \`cargo install liteconfig-tui\`."
         else
             os="unknown-linux-gnu"
         fi

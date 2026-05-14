@@ -39,6 +39,12 @@ pub fn liteconfig_repos_dir() -> Result<PathBuf> {
     Ok(liteconfig_dir()?.join("repos"))
 }
 
+/// Root for installed Claude Code plugins. Each plugin lands in
+/// `~/.liteconfig/plugins/<plugin-id>/`.
+pub fn liteconfig_plugins_dir() -> Result<PathBuf> {
+    Ok(liteconfig_dir()?.join("plugins"))
+}
+
 /// Working directory for the GitHub backup repo. We keep one long-lived clone
 /// here so pushes are incremental instead of full uploads each time.
 pub fn liteconfig_backup_repo_dir() -> Result<PathBuf> {
@@ -111,6 +117,24 @@ pub fn cursor_mcp_path(settings: &Settings) -> Result<PathBuf> {
 
 pub fn cursor_rules_dir(settings: &Settings) -> Result<PathBuf> {
     Ok(cursor_config_dir(settings)?.join("rules"))
+}
+
+// OpenCode uses XDG: `$XDG_CONFIG_HOME/opencode` or `~/.config/opencode`.
+// See https://opencode.ai/docs/config/.
+pub fn opencode_config_dir(settings: &Settings) -> Result<PathBuf> {
+    if let Some(p) = settings.path_overrides.opencode_config_dir.as_ref() {
+        return Ok(PathBuf::from(p));
+    }
+    if let Ok(p) = std::env::var("XDG_CONFIG_HOME") {
+        if !p.is_empty() {
+            return Ok(PathBuf::from(p).join("opencode"));
+        }
+    }
+    Ok(home_dir()?.join(".config").join("opencode"))
+}
+
+pub fn opencode_settings_path(settings: &Settings) -> Result<PathBuf> {
+    Ok(opencode_config_dir(settings)?.join("opencode.json"))
 }
 
 // ---------- helpers ----------

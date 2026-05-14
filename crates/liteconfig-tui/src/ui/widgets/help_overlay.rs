@@ -111,6 +111,7 @@ fn help_text(tab: Tab) -> &'static [HelpEntry] {
         Tab::Skills => SKILLS,
         Tab::Mcp => MCP,
         Tab::Rules => RULES,
+        Tab::Plugins => PLUGINS,
         Tab::Backup => BACKUP,
         Tab::Sessions => SESSIONS,
         Tab::Settings => SETTINGS,
@@ -278,9 +279,21 @@ const BACKUP: &[HelpEntry] = &[
     },
 ];
 
+const PLUGINS: &[HelpEntry] = &[
+    HelpEntry::Section("Plugins"),
+    HelpEntry::Text("Claude Code plugin bundles — each plugin packages skills + MCP servers + subagents + slash commands under one git repo."),
+    HelpEntry::Blank,
+    HelpEntry::Key { key: "↑/↓", desc: "move focus" },
+    HelpEntry::Key { key: "n", desc: "open curated plugin marketplace" },
+    HelpEntry::Key { key: "d d", desc: "uninstall focused plugin (press twice within 2s)" },
+    HelpEntry::Blank,
+    HelpEntry::Section("Global"),
+    HelpEntry::Key { key: "Tab / 1-8", desc: "tabs · L activity · ? help · q quit" },
+];
+
 const SESSIONS: &[HelpEntry] = &[
     HelpEntry::Section("Sessions"),
-    HelpEntry::Text("(placeholder — session browsing lands in a later release)"),
+    HelpEntry::Text("Session browsing is planned for a later release."),
     HelpEntry::Blank,
     HelpEntry::Section("Global"),
     HelpEntry::Key {

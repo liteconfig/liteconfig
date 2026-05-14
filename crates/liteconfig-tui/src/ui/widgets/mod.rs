@@ -3,6 +3,8 @@ pub mod agent_popup;
 pub mod button_bar;
 pub mod filter_bar;
 pub mod help_overlay;
+pub mod install_log_popup;
+pub mod mcp_search_popup;
 pub mod method_popup;
 pub mod presets_popup;
 pub mod search_skills_popup;

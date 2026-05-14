@@ -1,9 +1,9 @@
 /target/
-Cargo.lock
+graphify-out/
+*.log
 
 # IDEs
 .vscode/
 .idea/
 .DS_Store
-
 

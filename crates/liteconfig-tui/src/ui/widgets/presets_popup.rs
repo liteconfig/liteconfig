@@ -3,6 +3,8 @@
 //! [`liteconfig_core::presets`] — either skill-repo URLs or MCP servers.
 
 use liteconfig_core::presets::{MCP_PRESETS, SKILL_REPO_PRESETS};
+
+use crate::app::PLUGIN_PRESETS;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -23,6 +25,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let title = match popup.kind {
         PresetsKind::SkillRepo => " New skill repo — curated presets ".to_string(),
         PresetsKind::Mcp => " New MCP server — curated presets ".to_string(),
+        PresetsKind::Plugin => " Install plugin — curated presets ".to_string(),
     };
     let block = Block::default()
         .borders(Borders::ALL)
@@ -61,7 +64,27 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .map(|p| {
                 ListItem::new(Line::from(vec![
                     Span::styled(
+                        format!("[{:<10}]", p.category),
+                        Style::default().fg(theme.accent),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(
                         p.name,
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw("  "),
+                    Span::styled(p.description, Style::default().fg(theme.muted)),
+                ]))
+            })
+            .collect(),
+        PresetsKind::Plugin => PLUGIN_PRESETS
+            .iter()
+            .map(|p| {
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("{}/{}", p.owner, p.name),
                         Style::default()
                             .fg(theme.primary)
                             .add_modifier(Modifier::BOLD),
@@ -94,14 +117,19 @@ pub fn render(frame: &mut Frame<'_>, app: &App, area: Rect) {
     state.select(Some(popup.cursor.min(total.saturating_sub(1))));
     frame.render_stateful_widget(list, list_area, &mut state);
 
-    let hint = Line::from(vec![
+    let mut hint_spans = vec![
         Span::styled(" ↑/↓ ", theme.accent_style()),
         Span::styled("move   ", theme.muted_style()),
         Span::styled(" Enter ", theme.accent_style()),
         Span::styled("install   ", theme.muted_style()),
-        Span::styled(" Esc ", theme.accent_style()),
-        Span::styled("cancel", theme.muted_style()),
-    ]);
+    ];
+    if matches!(popup.kind, PresetsKind::Mcp) {
+        hint_spans.push(Span::styled(" ^F ", theme.accent_style()));
+        hint_spans.push(Span::styled("live search   ", theme.muted_style()));
+    }
+    hint_spans.push(Span::styled(" Esc ", theme.accent_style()));
+    hint_spans.push(Span::styled("cancel", theme.muted_style()));
+    let hint = Line::from(hint_spans);
     frame.render_widget(
         Paragraph::new(hint)
             .alignment(Alignment::Center)

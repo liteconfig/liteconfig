@@ -8,6 +8,7 @@ use liteconfig_core::agents::for_kind as agent_for_kind;
 use liteconfig_core::db::Database;
 use liteconfig_core::model::agent::{AgentKind, ALL_AGENT_KINDS};
 use liteconfig_core::model::mcp::McpServer;
+use liteconfig_core::model::plugin::PluginSource;
 use liteconfig_core::model::profile::Profile;
 use liteconfig_core::model::rule::Rule;
 use liteconfig_core::model::skill::{Skill, SyncMethod};
@@ -15,10 +16,13 @@ use liteconfig_core::paths::liteconfig_dir;
 use liteconfig_core::presets::{MCP_PRESETS, SKILL_REPO_PRESETS};
 use liteconfig_core::services::backup_service;
 use liteconfig_core::services::backup_service::Snapshot;
+use liteconfig_core::services::mcp_index_service::{self, ExternalMcp};
 use liteconfig_core::services::mcp_service;
+use liteconfig_core::services::plugin_service;
 use liteconfig_core::services::profile_service;
 use liteconfig_core::services::rule_service;
 use liteconfig_core::services::secrets_service::SecretStore;
+use liteconfig_core::services::skill_cli_service::{self, CommandStream, InstallMethod, RunStatus};
 use liteconfig_core::services::skill_index_service::{self, ExternalSkill};
 use liteconfig_core::services::skill_repo_service;
 use liteconfig_core::services::skill_service;
@@ -33,7 +37,9 @@ pub enum Tab {
     Skills,
     Mcp,
     Rules,
+    Plugins,
     Backup,
+    #[allow(dead_code)]
     Sessions,
     Settings,
 }
@@ -44,8 +50,8 @@ impl Tab {
         Tab::Skills,
         Tab::Mcp,
         Tab::Rules,
+        Tab::Plugins,
         Tab::Backup,
-        Tab::Sessions,
         Tab::Settings,
     ];
 
@@ -55,6 +61,7 @@ impl Tab {
             Tab::Skills => "Skills",
             Tab::Mcp => "MCP",
             Tab::Rules => "Rules",
+            Tab::Plugins => "Plugins",
             Tab::Backup => "Backup",
             Tab::Sessions => "Sessions",
             Tab::Settings => "Settings",
@@ -165,13 +172,58 @@ pub struct PresetsPopup {
 pub enum PresetsKind {
     SkillRepo,
     Mcp,
+    Plugin,
 }
+
+/// Curated Claude Code plugin repo. Lives here (not liteconfig-core) because
+/// the catalog is TUI-facing and may reshuffle with UX iterations.
+#[derive(Debug, Clone, Copy)]
+pub struct PluginPreset {
+    pub owner: &'static str,
+    pub name: &'static str,
+    pub branch: &'static str,
+    pub description: &'static str,
+}
+
+pub const PLUGIN_PRESETS: &[PluginPreset] = &[
+    PluginPreset {
+        owner: "anthropic-experimental",
+        name: "cc-essentials",
+        branch: "main",
+        description: "Official starter plugin bundle (skills + commands)",
+    },
+    PluginPreset {
+        owner: "davila7",
+        name: "claude-code-templates",
+        branch: "main",
+        description: "Language-specific workflow templates",
+    },
+    PluginPreset {
+        owner: "sumeetdas",
+        name: "claude-code-power-pack",
+        branch: "main",
+        description: "Productivity commands + subagents",
+    },
+    PluginPreset {
+        owner: "jondot",
+        name: "awesome-claude-code",
+        branch: "main",
+        description: "Community-curated plugin bundle",
+    },
+    PluginPreset {
+        owner: "vivekvells",
+        name: "claude-dev-toolkit",
+        branch: "main",
+        description: "Dev workflow helpers + subagents",
+    },
+];
 
 impl PresetsPopup {
     pub fn len(&self) -> usize {
         match self.kind {
             PresetsKind::SkillRepo => SKILL_REPO_PRESETS.len(),
             PresetsKind::Mcp => MCP_PRESETS.len(),
+            PresetsKind::Plugin => PLUGIN_PRESETS.len(),
         }
     }
 
@@ -226,6 +278,70 @@ impl std::fmt::Debug for SearchSkillsPopup {
     }
 }
 
+/// Popup that tails installer output. Wraps `CommandStream` so the same
+/// popup can drive either `pnpx skills add <owner/repo>` or a nested
+/// pnpm-bootstrap step.
+#[derive(Clone)]
+pub struct InstallLogPopup {
+    pub mode: InstallLogMode,
+    /// `owner/repo` the user wanted to install. Carried through so when the
+    /// pnpm-installer finishes we can automatically kick off the skill
+    /// install.
+    pub pending_skill: Option<String>,
+}
+
+#[derive(Clone)]
+pub enum InstallLogMode {
+    /// We need pnpm but don't have it — prompt for confirmation.
+    ConfirmPnpm { owner_repo: String },
+    /// Child process is streaming or just finished. Status lives on the
+    /// `CommandStream` itself.
+    Streaming(CommandStream),
+}
+
+impl std::fmt::Debug for InstallLogPopup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InstallLogPopup")
+            .field(
+                "mode",
+                match &self.mode {
+                    InstallLogMode::ConfirmPnpm { owner_repo } => owner_repo,
+                    InstallLogMode::Streaming(s) => &s.title,
+                },
+            )
+            .field("pending_skill", &self.pending_skill)
+            .finish()
+    }
+}
+
+/// Inbox for the MCP live-search popup — same pattern as `SearchInbox` but
+/// carrying `ExternalMcp` results from Smithery.
+pub type McpSearchInbox =
+    std::sync::Arc<std::sync::Mutex<Option<Result<Vec<ExternalMcp>, String>>>>;
+
+/// Live Smithery MCP search popup. Mirrors `SearchSkillsPopup`.
+#[derive(Clone)]
+pub struct SearchMcpPopup {
+    pub query: String,
+    pub results: Vec<ExternalMcp>,
+    pub cursor: usize,
+    pub status: SearchStatus,
+    pub focus: SearchFocus,
+    pub inbox: McpSearchInbox,
+}
+
+impl std::fmt::Debug for SearchMcpPopup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SearchMcpPopup")
+            .field("query", &self.query)
+            .field("results_len", &self.results.len())
+            .field("cursor", &self.cursor)
+            .field("status", &self.status)
+            .field("focus", &self.focus)
+            .finish()
+    }
+}
+
 /// View-level state for the MCP tab.
 #[derive(Debug, Clone, Default)]
 pub struct McpView {
@@ -234,6 +350,15 @@ pub struct McpView {
     pub focused_idx: usize,
     pub filter: String,
     pub filter_editing: bool,
+}
+
+/// View-level state for the Plugins tab.
+#[derive(Debug, Clone, Default)]
+pub struct PluginsView {
+    pub plugins: Vec<liteconfig_core::model::plugin::Plugin>,
+    pub focused_idx: usize,
+    /// Two-phase delete, same pattern as Backup's snapshot delete.
+    pub delete_armed_at: Option<std::time::Instant>,
 }
 
 /// View-level state for the Backup tab.
@@ -329,6 +454,7 @@ pub struct App {
     pub mcp_view: McpView,
     pub rules_view: RulesView,
     pub backup_view: BackupView,
+    pub plugins_view: PluginsView,
     pub settings_view: SettingsView,
     /// When `Some`, the active tab yields input to drive the popup.
     pub agent_popup: Option<AgentPopup>,
@@ -338,6 +464,10 @@ pub struct App {
     pub presets_popup: Option<PresetsPopup>,
     /// When `Some`, the skills.sh search popup is open.
     pub search_popup: Option<SearchSkillsPopup>,
+    /// When `Some`, the MCP Smithery live-search popup is open.
+    pub mcp_search_popup: Option<SearchMcpPopup>,
+    /// When `Some`, the pnpx installer log (or pre-install confirm) is up.
+    pub install_log_popup: Option<InstallLogPopup>,
 
     /// Ordered list of available theme slugs (builtin + user). Populated once
     /// on startup; used to cycle themes in the Settings tab.
@@ -377,11 +507,14 @@ impl App {
             mcp_view: McpView::default(),
             rules_view: RulesView::default(),
             backup_view: BackupView::default(),
+            plugins_view: PluginsView::default(),
             settings_view: SettingsView::default(),
             agent_popup: None,
             method_popup: None,
             presets_popup: None,
             search_popup: None,
+            mcp_search_popup: None,
+            install_log_popup: None,
             available_themes,
             toasts: Vec::new(),
             tasks: TaskRunner::new(),
@@ -394,9 +527,138 @@ impl App {
         app.reload_mcp()?;
         app.reload_rules()?;
         app.reload_backups();
+        app.reload_plugins();
         app.auto_import_if_empty();
         app.rescan_live_skills_async();
+        app.recompute_skill_hashes_async();
         Ok(app)
+    }
+
+    // ---------- pnpx install-log popup ----------
+
+    /// Entry point for the Skills-tab `p` shortcut. If pnpm is on PATH,
+    /// spawn `pnpx skills add <owner/repo>` and open the tailing popup.
+    /// Otherwise open the confirm-pnpm prompt first.
+    pub fn install_skill_via_pnpx(&mut self, owner_repo: &str) {
+        match skill_cli_service::detect() {
+            InstallMethod::None => {
+                self.install_log_popup = Some(InstallLogPopup {
+                    mode: InstallLogMode::ConfirmPnpm {
+                        owner_repo: owner_repo.to_string(),
+                    },
+                    pending_skill: Some(owner_repo.to_string()),
+                });
+            }
+            InstallMethod::NodeOnly => {
+                // Node but no package manager — treat like missing so the
+                // confirm prompt still offers to install pnpm.
+                self.install_log_popup = Some(InstallLogPopup {
+                    mode: InstallLogMode::ConfirmPnpm {
+                        owner_repo: owner_repo.to_string(),
+                    },
+                    pending_skill: Some(owner_repo.to_string()),
+                });
+            }
+            InstallMethod::Pnpm | InstallMethod::Npm => {
+                let stream = skill_cli_service::install_via_pnpx(owner_repo);
+                self.install_log_popup = Some(InstallLogPopup {
+                    mode: InstallLogMode::Streaming(stream),
+                    pending_skill: Some(owner_repo.to_string()),
+                });
+            }
+        }
+    }
+
+    /// Confirm popup → yes: start the pnpm installer, stay in popup.
+    pub fn install_log_confirm_pnpm(&mut self) {
+        let Some(popup) = self.install_log_popup.as_mut() else {
+            return;
+        };
+        let InstallLogMode::ConfirmPnpm { .. } = &popup.mode else {
+            return;
+        };
+        let stream = skill_cli_service::install_pnpm_via_curl();
+        popup.mode = InstallLogMode::Streaming(stream);
+    }
+
+    /// Confirm popup → no: fall back to git-clone for the pending skill.
+    pub fn install_log_decline_pnpm(&mut self) {
+        let Some(popup) = self.install_log_popup.take() else {
+            return;
+        };
+        let Some(owner_repo) = popup.pending_skill else {
+            return;
+        };
+        self.push_toast(
+            format!("Falling back to git clone for {owner_repo}"),
+            ToastLevel::Info,
+        );
+        let repo = match skill_repo_service::add(&self.db, &owner_repo, None) {
+            Ok(r) => r,
+            Err(e) => {
+                self.push_toast(format!("Add failed: {e}"), ToastLevel::Error);
+                return;
+            }
+        };
+        if let Some(path) = self.db.path().map(std::path::Path::to_path_buf) {
+            let repo_id = repo.id.clone();
+            self.tasks.submit(format!("Clone {owner_repo}"), move || {
+                let db = Database::open(&path).map_err(|e| e.to_string())?;
+                let r = skill_repo_service::sync(&db, &repo_id).map_err(|e| e.to_string())?;
+                Ok(format!("{} skill(s)", r.skill_count))
+            });
+        } else {
+            let _ = skill_repo_service::sync(&self.db, &repo.id);
+            let _ = self.reload_skills();
+        }
+    }
+
+    /// User pressed Enter/Esc on the streaming popup. If the pnpm installer
+    /// just finished successfully and a skill is pending, auto-chain into
+    /// `pnpx skills add <pending>`. Otherwise close + trigger a rescan so
+    /// freshly installed files land in the Skills tab.
+    pub fn install_log_close(&mut self) {
+        let Some(popup) = self.install_log_popup.take() else {
+            return;
+        };
+        let was_ok = matches!(
+            &popup.mode,
+            InstallLogMode::Streaming(s) if matches!(s.status(), RunStatus::Ok)
+        );
+        // If pnpm just landed and we have a pending skill, kick off the
+        // actual skill install now.
+        if was_ok {
+            if let (Some(pending), true) = (
+                popup.pending_skill.as_ref(),
+                matches!(
+                    &popup.mode,
+                    InstallLogMode::Streaming(s) if s.title == "install pnpm"
+                ),
+            ) {
+                let owner_repo = pending.clone();
+                self.install_skill_via_pnpx(&owner_repo);
+                return;
+            }
+            self.rescan_live_skills_async();
+        }
+    }
+
+    pub fn recompute_skill_hashes_async(&mut self) {
+        if let Some(path) = self.db.path().map(std::path::Path::to_path_buf) {
+            self.tasks.submit("Recompute skill hashes", move || {
+                let db = Database::open(&path).map_err(|e| e.to_string())?;
+                let n = skill_service::recompute_missing_hashes(&db).map_err(|e| e.to_string())?;
+                if n == 0 {
+                    Ok(String::new())
+                } else {
+                    Ok(format!("{n} hashed"))
+                }
+            });
+        } else if let Ok(n) = skill_service::recompute_missing_hashes(&self.db) {
+            if n > 0 {
+                let _ = self.reload_skills();
+            }
+        }
     }
 
     /// Every launch, kick off a background scan of the user's live skills
@@ -543,6 +805,7 @@ impl App {
         self.toasts.retain(|t| t.created_at.elapsed().as_secs() < 5);
         self.drain_completed_tasks();
         self.drain_search_inbox();
+        self.drain_mcp_search_inbox();
     }
 
     /// Move any just-finished background tasks out of the runner: push a
@@ -564,7 +827,9 @@ impl App {
     fn toast_for_task(entry: &TaskLogEntry) -> Option<(ToastLevel, String)> {
         match &entry.status {
             TaskStatus::Ok(s) => {
-                if entry.name == "Rescan live skills" && s.is_empty() {
+                if (entry.name == "Rescan live skills" || entry.name == "Recompute skill hashes")
+                    && s.is_empty()
+                {
                     return None;
                 }
                 if s.is_empty() {
@@ -582,7 +847,7 @@ impl App {
 
     fn post_task_reload(&mut self, entry: &TaskLogEntry) {
         match entry.name.as_str() {
-            "Sync all skills" | "Rescan live skills" => {
+            "Sync all skills" | "Rescan live skills" | "Recompute skill hashes" => {
                 let _ = self.reload_skills();
             }
             "Sync all MCP" => {
@@ -895,6 +1160,7 @@ impl App {
         match p.kind {
             PresetsKind::SkillRepo => self.install_skill_repo_preset(p.cursor),
             PresetsKind::Mcp => self.install_mcp_preset(p.cursor),
+            PresetsKind::Plugin => self.install_plugin_preset(p.cursor),
         }
     }
 
@@ -907,7 +1173,7 @@ impl App {
             return;
         };
         let arg = preset.add_arg();
-        let repo = match skill_repo_service::add(&self.db, &arg) {
+        let repo = match skill_repo_service::add(&self.db, &arg, Some(preset.branch)) {
             Ok(r) => r,
             Err(e) => {
                 self.push_toast(format!("Add failed: {e}"), ToastLevel::Error);
@@ -1102,7 +1368,8 @@ impl App {
         self.search_popup = None;
         let arg = hit.add_arg();
         let label = hit.name.clone();
-        let repo = match skill_repo_service::add(&self.db, &arg) {
+        let branch = hit.repo_branch.clone();
+        let repo = match skill_repo_service::add(&self.db, &arg, Some(&branch)) {
             Ok(r) => r,
             Err(e) => {
                 self.push_toast(format!("Add failed: {e}"), ToastLevel::Error);
@@ -1131,6 +1398,145 @@ impl App {
                 }
                 Err(e) => self.push_toast(format!("Clone failed: {e}"), ToastLevel::Error),
             }
+        }
+    }
+
+    // ---------- Smithery MCP search popup ----------
+
+    pub fn open_search_mcp(&mut self) {
+        self.mcp_search_popup = Some(SearchMcpPopup {
+            query: String::new(),
+            results: Vec::new(),
+            cursor: 0,
+            status: SearchStatus::Idle,
+            focus: SearchFocus::Query,
+            inbox: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        });
+    }
+
+    pub fn mcp_search_popup_cancel(&mut self) {
+        self.mcp_search_popup = None;
+    }
+
+    pub fn mcp_search_popup_push(&mut self, c: char) {
+        if let Some(p) = self.mcp_search_popup.as_mut() {
+            p.query.push(c);
+            p.focus = SearchFocus::Query;
+        }
+    }
+
+    pub fn mcp_search_popup_pop(&mut self) {
+        if let Some(p) = self.mcp_search_popup.as_mut() {
+            p.query.pop();
+            p.focus = SearchFocus::Query;
+        }
+    }
+
+    pub fn mcp_search_popup_toggle_focus(&mut self) {
+        if let Some(p) = self.mcp_search_popup.as_mut() {
+            p.focus = match p.focus {
+                SearchFocus::Query => SearchFocus::Results,
+                SearchFocus::Results => SearchFocus::Query,
+            };
+        }
+    }
+
+    pub fn mcp_search_popup_move(&mut self, delta: i32) {
+        let Some(p) = self.mcp_search_popup.as_mut() else {
+            return;
+        };
+        let n = p.results.len() as i32;
+        if n == 0 {
+            return;
+        }
+        p.cursor = (((p.cursor as i32 + delta) % n + n) % n) as usize;
+    }
+
+    pub fn mcp_search_popup_enter(&mut self) {
+        let Some(p) = self.mcp_search_popup.as_ref() else {
+            return;
+        };
+        match p.focus {
+            SearchFocus::Query => self.run_mcp_search(),
+            SearchFocus::Results => self.install_focused_mcp_search_result(),
+        }
+    }
+
+    fn run_mcp_search(&mut self) {
+        let Some(p) = self.mcp_search_popup.as_mut() else {
+            return;
+        };
+        let query = p.query.trim().to_string();
+        if query.is_empty() {
+            p.status = SearchStatus::Error("type a query first".into());
+            return;
+        }
+        p.status = SearchStatus::Loading;
+        p.results.clear();
+        p.cursor = 0;
+        let inbox = p.inbox.clone();
+        std::thread::spawn(move || {
+            let result = mcp_index_service::search(&query, 1, 20).map_err(|e| e.to_string());
+            if let Ok(mut slot) = inbox.lock() {
+                *slot = Some(result);
+            }
+        });
+    }
+
+    pub fn drain_mcp_search_inbox(&mut self) {
+        let Some(p) = self.mcp_search_popup.as_mut() else {
+            return;
+        };
+        let delivered = { p.inbox.lock().ok().and_then(|mut s| s.take()) };
+        let Some(outcome) = delivered else {
+            return;
+        };
+        match outcome {
+            Ok(hits) => {
+                p.results = hits;
+                p.cursor = 0;
+                p.status = SearchStatus::Loaded;
+                p.focus = SearchFocus::Results;
+            }
+            Err(e) => {
+                p.status = SearchStatus::Error(e);
+            }
+        }
+    }
+
+    fn install_focused_mcp_search_result(&mut self) {
+        let Some(p) = self.mcp_search_popup.as_ref() else {
+            return;
+        };
+        let Some(hit) = p.results.get(p.cursor).cloned() else {
+            return;
+        };
+        self.mcp_search_popup = None;
+        let mut enabled = BTreeMap::new();
+        for agent in ALL_AGENT_KINDS {
+            enabled.insert(*agent, false);
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let server = McpServer {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: hit.qualified_name.clone(),
+            config: hit.install_config(),
+            enabled,
+            created_at: now,
+            updated_at: now,
+        };
+        match mcp_service::upsert(&self.db, server) {
+            Ok(s) => {
+                let _ = self.reload_mcp();
+                self.push_toast(
+                    format!(
+                        "Added MCP \"{}\" (disabled — enable per agent via a)",
+                        s.name
+                    ),
+                    ToastLevel::Success,
+                );
+            }
+            Err(e) => self.push_toast(format!("Add failed: {e}"), ToastLevel::Error),
         }
     }
 
@@ -1621,6 +2027,103 @@ impl App {
     }
 
     // ---------- Backup tab actions ----------
+
+    // ---------- Plugins tab actions ----------
+
+    pub fn reload_plugins(&mut self) {
+        let plugins = plugin_service::list(&self.db).unwrap_or_default();
+        let max_idx = plugins.len().saturating_sub(1);
+        let focused = self.plugins_view.focused_idx.min(max_idx);
+        let prev_armed = self.plugins_view.delete_armed_at;
+        self.plugins_view = PluginsView {
+            plugins,
+            focused_idx: focused,
+            delete_armed_at: prev_armed,
+        };
+    }
+
+    pub fn move_plugin_focus(&mut self, delta: i32) {
+        let n = self.plugins_view.plugins.len();
+        if n == 0 {
+            return;
+        }
+        let len = n as i32;
+        let next = ((self.plugins_view.focused_idx as i32 + delta) % len + len) % len;
+        self.plugins_view.focused_idx = next as usize;
+    }
+
+    pub fn clear_plugin_delete_arm(&mut self) {
+        self.plugins_view.delete_armed_at = None;
+    }
+
+    pub fn install_plugin_preset(&mut self, idx: usize) {
+        let Some(preset) = PLUGIN_PRESETS.get(idx).copied() else {
+            return;
+        };
+        let source = PluginSource::Git {
+            url: format!("https://github.com/{}/{}.git", preset.owner, preset.name),
+            branch: preset.branch.to_string(),
+        };
+        let name_hint = format!("{}/{}", preset.owner, preset.name);
+        match plugin_service::install(&self.db, source, Some(&name_hint)) {
+            Ok(p) => {
+                self.reload_plugins();
+                let _ = self.reload_skills();
+                self.push_toast(
+                    format!(
+                        "Installed {} — {} skill(s), {} cmd(s), {} agent(s)",
+                        p.name, p.contents.skills, p.contents.commands, p.contents.agents
+                    ),
+                    ToastLevel::Success,
+                );
+            }
+            Err(e) => self.push_toast(format!("Plugin install failed: {e}"), ToastLevel::Error),
+        }
+    }
+
+    pub fn open_new_plugin_menu(&mut self) {
+        self.presets_popup = Some(PresetsPopup {
+            kind: PresetsKind::Plugin,
+            cursor: 0,
+        });
+    }
+
+    pub fn delete_focused_plugin(&mut self) {
+        let Some(plugin) = self
+            .plugins_view
+            .plugins
+            .get(self.plugins_view.focused_idx)
+            .cloned()
+        else {
+            self.push_toast("No plugin to delete", ToastLevel::Warning);
+            return;
+        };
+        let now = std::time::Instant::now();
+        let armed = self
+            .plugins_view
+            .delete_armed_at
+            .map(|t| now.duration_since(t) <= DELETE_CONFIRM_WINDOW)
+            .unwrap_or(false);
+        if !armed {
+            self.plugins_view.delete_armed_at = Some(now);
+            self.push_toast(
+                format!("Press d again to remove plugin {}", plugin.name),
+                ToastLevel::Warning,
+            );
+            return;
+        }
+        self.plugins_view.delete_armed_at = None;
+        match plugin_service::uninstall(&self.db, &plugin.id) {
+            Ok(()) => {
+                self.reload_plugins();
+                self.push_toast(
+                    format!("Uninstalled plugin {}", plugin.name),
+                    ToastLevel::Success,
+                );
+            }
+            Err(e) => self.push_toast(format!("Uninstall failed: {e}"), ToastLevel::Error),
+        }
+    }
 
     pub fn reload_backups(&mut self) {
         let snapshots = backup_service::list_snapshots().unwrap_or_default();
