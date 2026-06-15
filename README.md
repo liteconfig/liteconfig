@@ -11,37 +11,53 @@ A blazing-fast TUI for managing AI coding-agent configurations across **Claude C
 
 ## Install
 
-### pnpx (no local install)
+### Supported prebuilt targets
+
+| Target | Prebuilt channels | Fallback |
+|---|---|---|
+| macOS `arm64`, `x86_64` | `pnpx`, `install.sh`, Homebrew | Not needed |
+| Linux glibc `x86_64`, `aarch64` | `pnpx`, `install.sh`, Homebrew | Not needed |
+| Linux musl / other Linux arches | Not published | `cargo install liteconfig-tui` |
+
+### pnpx (supported prebuilt targets)
 
 ```sh
 pnpx liteconfig
 ```
 
 The npm package is a small launcher. On first run it downloads the matching
-GitHub release binary, verifies it against `SHA256SUMS`, caches it in your
-system cache directory, then starts the TUI.
+GitHub release binary for the supported prebuilt targets above, verifies it
+against `SHA256SUMS`, caches it in your system cache directory, then starts
+the TUI. Unsupported Linux targets should use Cargo instead.
 
-### Cargo (any platform)
+### Cargo (any platform with a Rust toolchain)
 
 ```sh
 cargo install liteconfig-tui
 ```
 
-### curl (macOS / Linux)
+Use this on Alpine/musl systems and any unsupported architecture.
+
+### curl (macOS / Linux glibc `x86_64` / `aarch64`)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/liteconfig/liteconfig/main/install.sh | sh
 ```
 
-The installer downloads a prebuilt binary for your platform, verifies the
-checksum, and drops it in `~/.local/bin` (or a directory you choose with
-`LITECONFIG_BIN_DIR=…`). Nothing else is touched.
+The installer downloads a prebuilt binary for your platform, requires a valid
+`SHA256SUMS` entry for that exact asset, verifies the checksum, and drops it in
+`~/.local/bin` (or a directory you choose with `LITECONFIG_BIN_DIR=…`). If the
+checksum metadata is unavailable or does not match, installation stops.
 
-### Homebrew (macOS / Linux)
+### Homebrew (macOS / Linux glibc `x86_64` / `aarch64`)
 
 ```sh
-brew install liteconfig/tap/liteconfig
+brew tap liteconfig/tap
+brew install liteconfig
 ```
+
+The tap formula is published from tagged releases to
+`liteconfig/homebrew-tap`.
 
 ### Build from source
 

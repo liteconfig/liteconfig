@@ -21,7 +21,7 @@
     "README.md"
   ],
   "scripts": {
-    "check:js": "node --check bin/liteconfig.js && node --test test/*.test.js"
+    "check:js": "node --check bin/liteconfig.js && node --check scripts/render-homebrew-formula.js && node --test test/*.test.js"
   },
   "engines": {
     "node": ">=18"

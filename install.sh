@@ -18,6 +18,8 @@ REPO="${LITECONFIG_REPO:-liteconfig/liteconfig}"
 VERSION="${LITECONFIG_VERSION:-latest}"
 BIN_DIR="${LITECONFIG_BIN_DIR:-$HOME/.local/bin}"
 BIN_NAME="liteconfig"
+PREBUILT_SUPPORT="Prebuilt binaries are available for macOS arm64/x86_64 and Linux glibc x86_64/aarch64."
+CARGO_FALLBACK="Use \`cargo install liteconfig-tui\`."
 
 # ---------- pretty output ----------
 
@@ -43,7 +45,7 @@ case "$uname_s" in
     Darwin) os="apple-darwin" ;;
     Linux)
         if ldd --version 2>&1 | grep -qi musl; then
-            fail "Prebuilt musl Linux binaries are not published yet - use \`cargo install liteconfig-tui\`."
+            fail "${PREBUILT_SUPPORT} musl Linux binaries are not published. ${CARGO_FALLBACK}"
         else
             os="unknown-linux-gnu"
         fi
@@ -51,13 +53,13 @@ case "$uname_s" in
     MINGW*|MSYS*|CYGWIN*)
         fail "Windows is not supported by this script — use cargo install or scoop."
         ;;
-    *) fail "Unsupported OS: $uname_s (try \`cargo install liteconfig-tui\`)" ;;
+    *) fail "Unsupported OS: $uname_s. ${PREBUILT_SUPPORT} ${CARGO_FALLBACK}" ;;
 esac
 
 case "$uname_m" in
     x86_64|amd64) arch="x86_64" ;;
     arm64|aarch64) arch="aarch64" ;;
-    *) fail "Unsupported arch: $uname_m (try \`cargo install liteconfig-tui\`)" ;;
+    *) fail "Unsupported arch: $uname_m. ${PREBUILT_SUPPORT} ${CARGO_FALLBACK}" ;;
 esac
 
 target="${arch}-${os}"
@@ -91,21 +93,22 @@ base="https://github.com/${REPO}/releases/download/${VERSION}"
 tmp="$(mktemp -d 2>/dev/null || mktemp -d -t liteconfig)"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
+info "Downloading checksums"
+curl -fsSL --retry 3 --retry-delay 2 -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS" \
+    || fail "Could not download SHA256SUMS from ${base}/SHA256SUMS"
+
+expected="$(awk -v asset="$asset" '$2 == asset { print $1; exit }' "${tmp}/SHA256SUMS")"
+[ -n "$expected" ] || fail "No checksum for ${asset} in SHA256SUMS"
+printf '%s\n' "$expected" | grep -Eq '^[0-9A-Fa-f]{64}$' \
+    || fail "Invalid checksum for ${asset} in SHA256SUMS"
+
 info "Downloading $asset"
 curl -fsSL --retry 3 --retry-delay 2 -o "${tmp}/${asset}" "${base}/${asset}" \
     || fail "Download failed from ${base}/${asset}"
 
-info "Downloading checksums"
-curl -fsSL --retry 3 --retry-delay 2 -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS" \
-    || warn "Could not fetch SHA256SUMS — skipping verification (not recommended)"
-
-if [ -f "${tmp}/SHA256SUMS" ]; then
-    expected="$(grep " ${asset}$" "${tmp}/SHA256SUMS" | awk '{print $1}')"
-    [ -n "$expected" ] || fail "No checksum for ${asset} in SHA256SUMS"
-    actual="$(cd "$tmp" && $sha_cmd "$asset" | awk '{print $1}')"
-    [ "$expected" = "$actual" ] || fail "Checksum mismatch! expected=$expected actual=$actual"
-    ok "Checksum verified"
-fi
+actual="$(cd "$tmp" && $sha_cmd "$asset" | awk '{print $1}')"
+[ "$expected" = "$actual" ] || fail "Checksum mismatch! expected=$expected actual=$actual"
+ok "Checksum verified"
 
 # ---------- extract & install ----------
 
