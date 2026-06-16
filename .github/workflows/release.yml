@@ -97,10 +97,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" \
-            --title "liteconfig ${TAG}" \
-            --generate-notes \
-            dist/liteconfig-*.tar.gz dist/SHA256SUMS
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              dist/liteconfig-*.tar.gz dist/SHA256SUMS \
+              --clobber
+          else
+            gh release create "$TAG" \
+              --title "liteconfig ${TAG}" \
+              --generate-notes \
+              dist/liteconfig-*.tar.gz dist/SHA256SUMS
+          fi
 
   publish-tap:
     needs: publish
@@ -118,6 +124,12 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          set -eu
+          shasum -a 256 liteconfig-*.tar.gz | sort > SHA256SUMS
 
       - name: Render Homebrew formula
         env:
