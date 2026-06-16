@@ -19,6 +19,24 @@ A blazing-fast TUI for managing AI coding-agent configurations across **Claude C
 | Linux glibc `x86_64`, `aarch64` | `pnpx`, `install.sh`, Homebrew | Not needed |
 | Linux musl / other Linux arches | Not published | `cargo install liteconfig-tui` |
 
+### Homebrew (macOS / Linux glibc `x86_64` / `aarch64`)
+
+```sh
+brew tap liteconfig/tap
+brew install liteconfig
+```
+
+The tap formula is published from tagged releases to
+`liteconfig/homebrew-tap`.
+
+### Cargo (any platform with a Rust toolchain)
+
+```sh
+cargo install liteconfig-tui
+```
+
+Use this on Alpine/musl systems and any unsupported architecture.
+
 ### pnpx (supported prebuilt targets)
 
 ```sh
@@ -30,14 +48,6 @@ GitHub release binary for the supported prebuilt targets above, verifies it
 against `SHA256SUMS`, caches it in your system cache directory, then starts
 the TUI. Unsupported Linux targets should use Cargo instead.
 
-### Cargo (any platform with a Rust toolchain)
-
-```sh
-cargo install liteconfig-tui
-```
-
-Use this on Alpine/musl systems and any unsupported architecture.
-
 ### curl (macOS / Linux glibc `x86_64` / `aarch64`)
 
 ```sh
@@ -48,16 +58,6 @@ The installer downloads a prebuilt binary for your platform, requires a valid
 `SHA256SUMS` entry for that exact asset, verifies the checksum, and drops it in
 `~/.local/bin` (or a directory you choose with `LITECONFIG_BIN_DIR=…`). If the
 checksum metadata is unavailable or does not match, installation stops.
-
-### Homebrew (macOS / Linux glibc `x86_64` / `aarch64`)
-
-```sh
-brew tap liteconfig/tap
-brew install liteconfig
-```
-
-The tap formula is published from tagged releases to
-`liteconfig/homebrew-tap`.
 
 ### Build from source
 
