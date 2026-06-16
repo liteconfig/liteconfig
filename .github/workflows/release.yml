@@ -194,6 +194,9 @@ jobs:
         run: |
           set -eu
           brew tap liteconfig/tap "https://github.com/${HOMEBREW_TAP_REPO}"
+          if [ "${RUNNER_OS}" = "Linux" ]; then
+            brew trust liteconfig/tap
+          fi
           brew install liteconfig
           liteconfig --version
 
